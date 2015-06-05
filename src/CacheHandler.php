@@ -58,6 +58,7 @@ class CacheHandler
      * Returns the default cache provider, used if a cache provider is not set.
      *
      * @return \Doctrine\Common\Cache\ApcCache
+     * @codeCoverageIgnore
      */
     protected function getDefaultCacheProvider()
     {
@@ -68,6 +69,7 @@ class CacheHandler
      * Returns the default handler, used if a handler is not set.
      *
      * @return callable
+     * @codeCoverageIgnore
      */
     protected function getDefaultHandler()
     {
