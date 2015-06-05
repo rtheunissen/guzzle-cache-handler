@@ -92,7 +92,7 @@ class CacheHandler
     /**
      * Called when a request is made on the client.
      *
-     * @return \GuzzleHttp\Promise\Promise
+     * @return \GuzzleHttp\Promise\PromiseInterface
      */
     public function __invoke(RequestInterface $request, array $options)
     {
@@ -120,7 +120,7 @@ class CacheHandler
      * Attempts to fetch the response from the cache, otherwise returns a
      * promise to store the response produced by the default handler.
      *
-     * @return \GuzzleHttp\Promise\Promise
+     * @return \GuzzleHttp\Promise\PromiseInterface
      */
     private function cache(RequestInterface $request, array $options)
     {
@@ -175,7 +175,7 @@ class CacheHandler
      *
      * @param string $key The key to store the response to.
      *
-     * @return \GuzzleHttp\Promise\Promise
+     * @return \GuzzleHttp\Promise\PromiseInterface
      */
     private function store(RequestInterface $request, array $options, $key)
     {
