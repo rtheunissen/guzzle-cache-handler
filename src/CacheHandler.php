@@ -5,6 +5,7 @@ namespace Concat\Http\Handler;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Doctrine\Common\Cache\CacheProvider;
+use Doctrine\Common\Cache\ApcCache;
 use GuzzleHttp\Promise\FulfilledPromise;
 
 /**
@@ -38,13 +39,39 @@ class CacheHandler
      *                       - ttl     : time in seconds to cache for
      */
     public function __construct(
-        CacheProvider $provider,
-        callable $handler,
+        CacheProvider $provider = null,
+        callable $handler = null,
         array $options = []
     ) {
-        $this->provider = $provider;
-        $this->handler  = $handler;
+
+        // Set the cache provider used to cached the response.
+        $this->provider = $provider ?: $this->getDefaultCacheProvider();
+
+        // Set the handler used to send requests.
+        $this->handler  = $handler ?: $this->getDefaultHandler();
+
+        // Override default options
         $this->options  = array_merge($this->getDefaultOptions(), $options);
+    }
+
+    /**
+     * Returns the default cache provider, used if a cache provider is not set.
+     *
+     * @return \Doctrine\Common\Cache\ApcCache
+     */
+    protected function getDefaultCacheProvider()
+    {
+        return new ApcCache();
+    }
+
+    /**
+     * Returns the default handler, used if a handler is not set.
+     *
+     * @return callable
+     */
+    protected function getDefaultHandler()
+    {
+        return \GuzzleHttp\choose_handler();
     }
 
     /**
