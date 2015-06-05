@@ -15,7 +15,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
     {
         $defaults = [
             'responses' => 1,
-            'ttl' => 0,
+            'expire' => 0,
             'methods' => ['GET'],
         ];
         $options = array_merge($defaults, $options);
@@ -31,7 +31,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
     public function testFetch()
     {
         extract($this->create([
-            'ttl' => 100,
+            'expire' => 60,
         ]));
 
         $client->get('/');
@@ -47,7 +47,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
     public function testExpire()
     {
         extract($this->create([
-            'ttl' => 1,
+            'expire' => 1,
         ]));
 
         $client->get('/');
@@ -62,7 +62,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
     public function testSkipStore()
     {
         extract($this->create([
-            'ttl' => 0,
+            'expire' => 0,
         ]));
 
         $client->get('/');

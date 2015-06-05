@@ -85,7 +85,7 @@ class CacheHandler
     {
         return [
             'methods' => ['GET', 'HEAD', 'OPTIONS'],
-            'ttl'     => 60, // seconds
+            'expire'  => 60, // seconds
         ];
     }
 
@@ -161,10 +161,10 @@ class CacheHandler
         return function (ResponseInterface $response) use ($key) {
             $value = [
                 'response' => 'response',
-                'expires'  => time() + $this->options['ttl'],
+                'expires'  => time() + $this->options['expire'],
             ];
 
-            $this->provider->save($key, $value, $this->options['ttl']);
+            $this->provider->save($key, $value, $this->options['expire']);
             return $response;
         };
     }
@@ -181,7 +181,7 @@ class CacheHandler
     {
         $response = call_user_func($this->handler, $request, $options);
 
-        if ($this->options['ttl'] > 0) {
+        if ($this->options['expire'] > 0) {
             return $response->then($this->doStore($key));
         }
 
