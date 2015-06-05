@@ -90,7 +90,7 @@ class CacheHandler
     /**
      * Called when a request is made on the client.
      *
-     * @return GuzzleHttp\Promise\Promise
+     * @return \GuzzleHttp\Promise\Promise
      */
     public function __invoke(RequestInterface $request, array $options)
     {
@@ -171,7 +171,7 @@ class CacheHandler
      * Uses the default handler to send the request, then promises to store the
      * response. Only stores if 'ttl' is greater than 0.
      *
-     * @param string %key The key to store the response to.
+     * @param string $key The key to store the response to.
      *
      * @return \GuzzleHttp\Promise\Promise
      */
