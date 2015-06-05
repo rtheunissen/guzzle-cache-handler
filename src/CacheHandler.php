@@ -15,7 +15,7 @@ class CacheHandler
 {
 
     /**
-     * @var Doctrine\Common\Cache\CacheProvider Cache provider.
+     * @var \Doctrine\Common\Cache\CacheProvider Cache provider.
      */
     private $provider;
 
