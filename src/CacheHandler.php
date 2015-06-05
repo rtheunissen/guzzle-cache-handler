@@ -31,15 +31,17 @@ class CacheHandler
     /**
      * Constructs a new cache handler.
      *
-     * @param Doctrine\Common\Cache\CacheProvider $provider Cache provider.
+     * @param \Doctrine\Common\Cache\CacheProvider $provider Cache provider.
      * @param callable $handler Default handler used to send response.
      * @param array $options Configuration options.
      *                       - methods : array of http methods to cache
      *                       - ttl     : time in seconds to cache for
      */
     public function __construct(
-        CacheProvider $provider, callable $handler, array $options = [])
-    {
+        CacheProvider $provider,
+        callable $handler,
+        array $options = []
+    ) {
         $this->provider = $provider;
         $this->handler  = $handler;
         $this->options  = array_merge($this->getDefaultOptions(), $options);
@@ -69,13 +71,13 @@ class CacheHandler
             return $this->cache($request, $options);
         }
 
-        return $this->handler->__invoke($request, $options);
+        return call_user_func($this->handler, $request, $options);
     }
 
     /**
      * Returns true if the given request should be cached.
      *
-     * @param Psr\Http\Message\RequestInterface $request The request to check.
+     * @param \Psr\Http\Message\RequestInterface $request The request to check.
      *
      * @return boolean true if the request should be cached, false otherwise.
      */
@@ -89,7 +91,7 @@ class CacheHandler
      * Attempts to fetch the response from the cache, otherwise returns a
      * promise to store the response produced by the default handler.
      *
-     * @return GuzzleHttp\Promise\Promise
+     * @return \GuzzleHttp\Promise\Promise
      */
     private function cache(RequestInterface $request, array $options)
     {
@@ -123,11 +125,11 @@ class CacheHandler
      *
      * @param string $key The key to store the response to.
      *
-     * @return Closure Function that stores the response.
+     * @return \Closure Function that stores the response.
      */
     private function doStore($key)
     {
-        return function(ResponseInterface $response) use ($key) {
+        return function (ResponseInterface $response) use ($key) {
             $value = [
                 'response' => 'response',
                 'expires'  => time() + $this->options['ttl'],
@@ -142,11 +144,13 @@ class CacheHandler
      * Uses the default handler to send the request, then promises to store the
      * response. Only stores if 'ttl' is greater than 0.
      *
-     * @return GuzzleHttp\Promise\Promise
+     * @param string %key The key to store the response to.
+     *
+     * @return \GuzzleHttp\Promise\Promise
      */
     private function store(RequestInterface $request, array $options, $key)
     {
-        $response = $this->handler->__invoke($request, $options);
+        $response = call_user_func($this->handler, $request, $options);
 
         if ($this->options['ttl'] > 0) {
             return $response->then($this->doStore($key));
@@ -160,7 +164,7 @@ class CacheHandler
      *
      * @param string $key The key to fetch.
      *
-     * @return Psr\Http\Message\ResponseInterface|null
+     * @return \Psr\Http\Message\ResponseInterface|null
      */
     private function doFetch($key)
     {
@@ -178,7 +182,7 @@ class CacheHandler
      *
      * @param string $key The key to fetch.
      *
-     * @return Psr\Http\Message\ResponseInterface|null
+     * @return \Psr\Http\Message\ResponseInterface|null
      */
     private function fetch($key)
     {
