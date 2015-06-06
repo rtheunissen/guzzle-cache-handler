@@ -18,8 +18,12 @@
     },
     "autoload": {
         "psr-4": {
-            "Concat\\Http\\Handler\\": "src/",
-            "Concat\\Http\\Handler\\Test\\": "tests/"
+            "Concat\\Http\\Handler\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Concat\\Http\\Handler\\Test\\": "tests"
         }
     }
 }
