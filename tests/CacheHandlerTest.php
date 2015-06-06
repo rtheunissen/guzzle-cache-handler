@@ -15,7 +15,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
     {
         $defaults = [
             'responses' => 1,
-            'expire' => 0,
+            'expire' => 60,
             'methods' => ['GET'],
         ];
         $options = array_merge($defaults, $options);
@@ -28,6 +28,11 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         return compact('cache', 'client');
     }
 
+    private function stored($cache)
+    {
+        return $cache->contains('GET:/:2e0ec6d556792df9bf25a1b3fd097058');
+    }
+
     public function testFetch()
     {
         extract($this->create([
@@ -35,7 +40,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         ]));
 
         $client->get('/');
-        $this->assertTrue($cache->contains('GET:/'));
+        $this->assertTrue($this->stored($cache));
 
         // would throw an exception if the request is made
         $client->get('/');
@@ -51,7 +56,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         ]));
 
         $client->get('/');
-        $this->assertTrue($cache->contains('GET:/'));
+        $this->assertTrue($this->stored($cache));
 
         sleep(1);
 
@@ -66,7 +71,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         ]));
 
         $client->get('/');
-        $this->assertFalse($cache->contains('GET:/'));
+        $this->assertFalse($this->stored($cache));
     }
 
     public function testBadMethod()
@@ -76,6 +81,40 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         ]));
 
         $client->get('/');
-        $this->assertFalse($cache->contains('GET:/'));
+        $this->assertFalse($this->stored($cache));
+    }
+
+    public function testFalseFilter()
+    {
+        extract($this->create([
+            'filter' => function ($request) {
+                return false;
+            },
+        ]));
+
+        $client->get('/');
+        $this->assertFalse($this->stored($cache));
+    }
+
+    public function testTrueFilter()
+    {
+        extract($this->create([
+            'filter' => function ($request) {
+                return true;
+            },
+        ]));
+
+        $client->get('/');
+        $this->assertTrue($this->stored($cache));
+    }
+
+    public function testNotCallableFilter()
+    {
+        extract($this->create([
+            'filter' => true,
+        ]));
+
+        $client->get('/');
+        $this->assertTrue($this->stored($cache));
     }
 }

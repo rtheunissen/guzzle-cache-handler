@@ -35,8 +35,6 @@ class CacheHandler
      * @param \Doctrine\Common\Cache\CacheProvider $provider Cache provider.
      * @param callable $handler Default handler used to send response.
      * @param array $options Configuration options.
-     *                       - methods : array of http methods to cache
-     *                       - ttl     : time in seconds to cache for
      */
     public function __construct(
         CacheProvider $provider = null,
@@ -84,8 +82,15 @@ class CacheHandler
     protected function getDefaultOptions()
     {
         return [
+
+            // HTTP methods that should be cached
             'methods' => ['GET', 'HEAD', 'OPTIONS'],
-            'expire'  => 60, // seconds
+
+            // Time in seconds to cache the response for
+            'expire'  => 60,
+
+            // Accepts a request and returns true if it should be cached
+            'filter'  => null,
         ];
     }
 
@@ -104,6 +109,33 @@ class CacheHandler
     }
 
     /**
+     * Filters the request using a configured filter to determine if it should
+     * be cached.
+     *
+     * @param \Psr\Http\Message\RequestInterface The request to filter.
+     *
+     * @return boolean true if should be cached, false otherwise.
+     */
+    private function filter(RequestInterface $request)
+    {
+        $filter = $this->options['filter'];
+        return ! is_callable($filter) || $filter($request);
+    }
+
+    /**
+     * Checks the method of the request to determine if it should be cached.
+     *
+     * @param \Psr\Http\Message\RequestInterface The request to filter.
+     *
+     * @return boolean true if should be cached, false otherwise.
+     */
+    private function checkMethod(RequestInterface $request)
+    {
+        $methods = (array) $this->options['methods'];
+        return in_array($request->getMethod(), $methods);
+    }
+
+    /**
      * Returns true if the given request should be cached.
      *
      * @param \Psr\Http\Message\RequestInterface $request The request to check.
@@ -112,8 +144,7 @@ class CacheHandler
      */
     private function shouldCache(RequestInterface $request)
     {
-        $methods = $this->options['methods'];
-        return is_array($methods) && in_array($request->getMethod(), $methods);
+        return $this->checkMethod($request) && $this->filter($request);
     }
 
     /**
@@ -126,9 +157,7 @@ class CacheHandler
     {
         $key = $this->generateKey($request, $options);
 
-        $response = $this->fetch($key);
-
-        if ( ! is_null($response)) {
+        if ($response = $this->fetch($key)) {
             return new FulfilledPromise($response);
         }
 
@@ -137,7 +166,7 @@ class CacheHandler
 
     /**
      * Generates the cache key for the given request and request options. The
-     * namespace should be set on the cache provider instead.
+     * namespace should be set on the cache provider.
      *
      * @return string The cache key
      */
@@ -146,6 +175,7 @@ class CacheHandler
         return join(":", [
             $request->getMethod(),
             $request->getUri(),
+            md5(json_encode($options)),
         ]);
     }
 

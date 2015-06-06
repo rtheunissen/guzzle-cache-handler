@@ -23,11 +23,14 @@ not provided.
 
 $handler = new \Concat\Http\Handler\CacheHandler($cacheProvider, $defaultHandler, [
 
-    // Methods to cache
+    // HTTP methods that should be cached
     'methods' => ['GET', 'HEAD', 'OPTIONS'],
 
     // Time in seconds to cache the response for
     'expire' => 60,
+
+    // Accepts a request and returns true if it should be cached
+    'filter' => null,
 ]);
 
 
