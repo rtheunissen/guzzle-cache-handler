@@ -20,7 +20,6 @@ Provide a Guzzle handler to use when the cache is not valid. `GuzzleHttp\choose_
 not provided.
 
 ```php
-
 $handler = new \Concat\Http\Handler\CacheHandler($cacheProvider, $defaultHandler, [
 
     // HTTP methods that should be cached
