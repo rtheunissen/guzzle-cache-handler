@@ -9,6 +9,7 @@ use Psr\Log\LogLevel;
 use Doctrine\Common\Cache\CacheProvider;
 use Doctrine\Common\Cache\ApcCache;
 use GuzzleHttp\Promise\FulfilledPromise;
+use GuzzleHttp\Promise\PromiseInterface;
 
 /**
  * Guzzle handler used to cache responses using Doctrine\Common\Cache.
@@ -142,7 +143,7 @@ class CacheHandler
     /**
      * Called when a request is made on the client.
      *
-     * @return \GuzzleHttp\Promise\PromiseInterface
+     * @return PromiseInterface
      */
     public function __invoke(RequestInterface $request, array $options)
     {
@@ -199,7 +200,7 @@ class CacheHandler
      * @param RequestInterface $request The request to cache.
      * @param array $options Configuration options.
      *
-     * @return \GuzzleHttp\Promise\PromiseInterface
+     * @return PromiseInterface
      */
     protected function cache(RequestInterface $request, array $options)
     {
@@ -264,7 +265,7 @@ class CacheHandler
      * Uses the default handler to send the request, then promises to store the
      * response. Only stores the request if 'expire' is greater than 0.
      *
-     * @param RequestInterface $request The request to send.
+     * @param RequestInterface $request The request to store.
      * @param string $key The key to store the response to.
      * @param array $options Configuration options.
      *
@@ -278,7 +279,24 @@ class CacheHandler
             return $default;
         }
 
-        return $default->then(function ($response) use ($request, $key) {
+        return $this->promiseToStore($request, $default, $key);
+    }
+
+    /**
+     * Returns a promise to store a response when it is received.
+     *
+     * @param RequestInterface $request The request to store.
+     * @param PromiseInterface $default The default handler promise.
+     * @param string $key The key to store the response to.
+     *
+     * @return PromiseInterface
+     */
+    protected function promiseToStore(
+        RequestInterface $request,
+        PromiseInterface $default,
+        $key
+    ) {
+        $promise = function (ResponseInterface $response) use ($request, $key) {
 
             // Build the response bundle to be stored
             $bundle = $this->buildCacheBundle($response);
@@ -287,7 +305,9 @@ class CacheHandler
             $this->logStoredBundle($request, $bundle);
 
             return $response;
-        });
+        };
+
+        return $default->then($promise);
     }
 
     /**
