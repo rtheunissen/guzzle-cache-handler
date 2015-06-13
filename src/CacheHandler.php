@@ -39,7 +39,7 @@ class CacheHandler
     /**
      * Constructs a new cache handler.
      *
-     * @param CacheProvider $provider Cache provider.
+     * @param CacheProvider $cache Cache provider.
      * @param callable $handler Default handler used to send response.
      * @param array $options Configuration options.
      */
@@ -150,7 +150,7 @@ class CacheHandler
             return $this->cache($request, $options);
         }
 
-        return $this->handler->__invoke($request, $options);
+        return call_user_func($this->handler, $request, $options);
     }
 
     /**
@@ -199,7 +199,7 @@ class CacheHandler
      * @param RequestInterface $request The request to cache.
      * @param array $options Configuration options.
      *
-     * @return PromiseInterface
+     * @return GuzzleHttp\Promise\PromiseInterface
      */
     protected function cache(RequestInterface $request, array $options)
     {
@@ -258,6 +258,68 @@ class CacheHandler
     protected function doStore($key, $bundle)
     {
         $this->cache->save($key, $bundle, $this->options['expire']);
+    }
+
+    /**
+     * Uses the default handler to send the request, then promises to store the
+     * response. Only stores the request if 'expire' is greater than 0.
+     *
+     * @param RequestInterface $request The request to send.
+     * @param string $key The key to store the response to.
+     * @param array $options Configuration options.
+     *
+     * @return PromiseInterface
+     */
+    protected function store(RequestInterface $request, $key, array $options)
+    {
+        $default = call_user_func($this->handler, $request, $options);
+
+        if ($this->options['expire'] <= 0) {
+            return $default;
+        }
+
+        return $default->then(function ($response) use ($request, $key) {
+
+            // Build the response bundle to be stored
+            $bundle = $this->buildCacheBundle($response);
+
+            $this->doStore($key, $bundle);
+            $this->logStoredBundle($request, $bundle);
+
+            return $response;
+        });
+    }
+
+    /**
+     * Fetches a response from the cache for a given key, null if invalid.
+     *
+     * @param string $key The key to fetch.
+     *
+     * @return array|null Bundle from cache or null if expired.
+     */
+    protected function doFetch($key)
+    {
+        $bundle = $this->cache->fetch($key);
+
+        if (time() < $bundle['expires']) {
+            return $bundle;
+        }
+
+        $this->cache->delete($key);
+    }
+
+    /**
+     * Checks if the cache containers the given key, then fetched it.
+     *
+     * @param string $key The key to fetch.
+     *
+     * @return array|null A response bundle or null if expired.
+     */
+    protected function fetch($key)
+    {
+        if ($this->cache->contains($key)) {
+            return $this->doFetch($key);
+        }
     }
 
     /**
@@ -358,67 +420,5 @@ class CacheHandler
             $bundle,
             "[%s] %s %s fetched from cache (expires in %ss)"
         );
-    }
-
-    /**
-     * Uses the default handler to send the request, then promises to store the
-     * response. Only stores the request if 'expire' is greater than 0.
-     *
-     * @param RequestInterface $request The request to send.
-     * @param string $key The key to store the response to.
-     * @param array $options Configuration options.
-     *
-     * @return PromiseInterface
-     */
-    protected function store(RequestInterface $request, $key, array $options)
-    {
-        $default = $this->handler->__invoke($request, $options);
-
-        if ($this->options['expire'] <= 0) {
-            return $default;
-        }
-
-        return $default->then(function ($response) use ($request, $key) {
-
-            // Build the response bundle to be stored
-            $bundle = $this->buildCacheBundle($response);
-
-            $this->doStore($key, $bundle);
-            $this->logStoredBundle($request, $bundle);
-
-            return $response;
-        });
-    }
-
-    /**
-     * Fetches a response from the cache for a given key, null if invalid.
-     *
-     * @param string $key The key to fetch.
-     *
-     * @return array|null Bundle from cache or null if expired.
-     */
-    protected function doFetch($key)
-    {
-        $bundle = $this->cache->fetch($key);
-
-        if (time() < $bundle['expires']) {
-            return $bundle;
-        }
-
-        $this->cache->delete($key);
-    }
-
-    /**
-     * Checks if the cache containers the given key, then fetched it.
-     *
-     * @param string $key The key to fetch.
-     *
-     * @return array|null A response bundle or null if expired.
-     */
-    protected function fetch($key)
-    {
-        if ($this->cache->contains($key)) {
-            return $this->doFetch($key);
-        }
     }
 }
