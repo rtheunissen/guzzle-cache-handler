@@ -4,6 +4,8 @@ namespace Concat\Http\Handler;
 
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 use Doctrine\Common\Cache\CacheProvider;
 use Doctrine\Common\Cache\ApcCache;
 use GuzzleHttp\Promise\FulfilledPromise;
@@ -17,45 +19,88 @@ class CacheHandler
     /**
      * @var \Doctrine\Common\Cache\CacheProvider Cache provider.
      */
-    private $provider;
+    protected $cache;
 
     /**
      * @var callable Default handler used to send response.
      */
-    private $handler;
+    protected $handler;
+
+    /**
+     * @var \Psr\Log\LoggerInterface PSR-3 compliant logger.
+     */
+    protected $logger;
 
     /**
      * @var array Configuration options.
      */
-    private $options;
+    protected $options;
 
     /**
      * Constructs a new cache handler.
      *
-     * @param \Doctrine\Common\Cache\CacheProvider $provider Cache provider.
+     * @param CacheProvider $provider Cache provider.
      * @param callable $handler Default handler used to send response.
      * @param array $options Configuration options.
      */
     public function __construct(
-        CacheProvider $provider = null,
+        CacheProvider $cache = null,
         callable $handler = null,
         array $options = []
     ) {
+        $cache   = $cache   ?: $this->getDefaultCacheProvider();
+        $handler = $handler ?: $this->getDefaultHandler();
 
-        // Set the cache provider used to cached the response.
-        $this->provider = $provider ?: $this->getDefaultCacheProvider();
+        $this->setCacheProvider($cache);
+        $this->setHandler($handler);
+        $this->setOptions($options);
+    }
 
-        // Set the handler used to send requests.
-        $this->handler  = $handler ?: $this->getDefaultHandler();
+    /**
+     * Sets the fallback handler to use when the cache is invalid.
+     *
+     * @param callable $handler
+     */
+    public function setHandler(callable $handler)
+    {
+        $this->handler = $handler;
+    }
 
-        // Override default options
-        $this->options  = array_merge($this->getDefaultOptions(), $options);
+    /**
+     * Sets the cache provider.
+     *
+     * @param CacheProvider $cache
+     */
+    public function setCacheProvider(CacheProvider $cache)
+    {
+        $this->cache = $cache;
+    }
+
+    /**
+     * Resets the options, merged with default values.
+     *
+     * @param array $options
+     */
+    public function setOptions(array $options)
+    {
+        $this->options = array_merge($this->getDefaultOptions(), $options);
+    }
+
+    /**
+     * Sets the logger.
+     *
+     * @param LoggerInterface $logger
+     */
+    public function setLogger(LoggerInterface $logger)
+    {
+        $this->logger = $logger;
     }
 
     /**
      * Returns the default cache provider, used if a cache provider is not set.
      *
-     * @return \Doctrine\Common\Cache\ApcCache
+     * @return ApcCache
+     *
      * @codeCoverageIgnore
      */
     protected function getDefaultCacheProvider()
@@ -97,7 +142,7 @@ class CacheHandler
     /**
      * Called when a request is made on the client.
      *
-     * @return \GuzzleHttp\Promise\PromiseInterface
+     * @return PromiseInterface
      */
     public function __invoke(RequestInterface $request, array $options)
     {
@@ -105,18 +150,18 @@ class CacheHandler
             return $this->cache($request, $options);
         }
 
-        return call_user_func($this->handler, $request, $options);
+        return $this->handler->__invoke($request, $options);
     }
 
     /**
      * Filters the request using a configured filter to determine if it should
      * be cached.
      *
-     * @param \Psr\Http\Message\RequestInterface The request to filter.
+     * @param RequestInterface The request to filter.
      *
      * @return boolean true if should be cached, false otherwise.
      */
-    private function filter(RequestInterface $request)
+    protected function filter(RequestInterface $request)
     {
         $filter = $this->options['filter'];
         return ! is_callable($filter) || $filter($request);
@@ -125,11 +170,11 @@ class CacheHandler
     /**
      * Checks the method of the request to determine if it should be cached.
      *
-     * @param \Psr\Http\Message\RequestInterface The request to filter.
+     * @param RequestInterface The request to filter.
      *
      * @return boolean true if should be cached, false otherwise.
      */
-    private function checkMethod(RequestInterface $request)
+    protected function checkMethod(RequestInterface $request)
     {
         $methods = (array) $this->options['methods'];
         return in_array($request->getMethod(), $methods);
@@ -138,11 +183,11 @@ class CacheHandler
     /**
      * Returns true if the given request should be cached.
      *
-     * @param \Psr\Http\Message\RequestInterface $request The request to check.
+     * @param RequestInterface $request The request to check.
      *
      * @return boolean true if the request should be cached, false otherwise.
      */
-    private function shouldCache(RequestInterface $request)
+    protected function shouldCache(RequestInterface $request)
     {
         return $this->checkMethod($request) && $this->filter($request);
     }
@@ -151,22 +196,32 @@ class CacheHandler
      * Attempts to fetch the response from the cache, otherwise returns a
      * promise to store the response produced by the default handler.
      *
-     * @return \GuzzleHttp\Promise\PromiseInterface
+     * @param RequestInterface $request The request to cache.
+     * @param array $options Configuration options.
+     *
+     * @return PromiseInterface
      */
-    private function cache(RequestInterface $request, array $options)
+    protected function cache(RequestInterface $request, array $options)
     {
         $key = $this->generateKey($request, $options);
 
-        if ($response = $this->fetch($key)) {
-            return new FulfilledPromise($response);
+        // Attempt to fetch a response bundle from the cache
+        $bundle = $this->fetch($key);
+
+        if ($bundle) {
+            $this->logFetchedBundle($request, $bundle);
+            return new FulfilledPromise($bundle['response']);
         }
 
-        return $this->store($request, $options, $key);
+        return $this->store($request, $key, $options);
     }
 
     /**
      * Generates the cache key for the given request and request options. The
      * namespace should be set on the cache provider.
+     *
+     * @param RequestInterface $request The request to generate a key for.
+     * @param array $options Configuration options.
      *
      * @return string The cache key
      */
@@ -180,42 +235,159 @@ class CacheHandler
     }
 
     /**
-     * Returns a function that stores the response.
+     * Builds a cache bundle using a given response.
+     *
+     * @param ResponseInterface $response
+     *
+     * @return array The response bundle to cache.
+     */
+    protected function buildCacheBundle(ResponseInterface $response)
+    {
+        return [
+            'response' => $response,
+            'expires'  => time() + $this->options['expire'],
+        ];
+    }
+
+    /**
+     * Stores a given response bundle to a given key.
      *
      * @param string $key The key to store the response to.
-     *
-     * @return \Closure Function that stores the response.
+     * @param array $bundle The response bundle.
      */
-    private function doStore($key)
+    protected function doStore($key, $bundle)
     {
-        return function (ResponseInterface $response) use ($key) {
-            $value = [
-                'response' => 'response',
-                'expires'  => time() + $this->options['expire'],
-            ];
+        $this->cache->save($key, $bundle, $this->options['expire']);
+    }
 
-            $this->provider->save($key, $value, $this->options['expire']);
-            return $response;
-        };
+    /**
+     * Returns the log level to use when logging bundles.
+     *
+     * @return string LogLevel
+     */
+    protected function getLogLevel()
+    {
+        return LogLevel::DEBUG;
+    }
+
+    /**
+     * Convenient internal logger entry point.
+     */
+    private function log($message, $bundle)
+    {
+        if (isset($this->logger)) {
+            $this->logger->log($this->getLogLevel(), $message, $bundle);
+        }
+    }
+
+    /**
+     * Logs that a bundle has been stored in the cache.
+     *
+     * @param RequestInterface $request The request.
+     * @param array $bundle The stored response bundle.
+     */
+    protected function logStoredBundle(
+        RequestInterface $request,
+        array $bundle
+    ) {
+        $this->log($this->getStoredLogMessage($request, $bundle), $bundle);
+    }
+
+    /**
+     * Logs that a bundle has been fetched from the cache.
+     *
+     * @param RequestInterface $request The request that produced the response.
+     * @param array $bundle The fetched response bundle.
+     */
+    protected function logFetchedBundle(
+        RequestInterface $request,
+        array $bundle
+    ) {
+        $this->log($this->getFetchedLogMessage($request, $bundle), $bundle);
+    }
+
+    /**
+     * Internal abstraction for log messages.
+     */
+    private function getLogMessage(
+        RequestInterface $request,
+        array $bundle,
+        $format
+    ) {
+        return vsprintf($format, [
+            gmdate('c'),
+            $request->getMethod(),
+            $request->getUri(),
+            $bundle['expires'] - time(),
+        ]);
+    }
+
+    /**
+     * Returns the log message for when a bundle is stored in the cache.
+     *
+     * @param RequestInterface $request The request that produced the response.
+     * @param array $bundle The stored response bundle.
+     *
+     * @return string The log message.
+     */
+    protected function getStoredLogMessage(
+        RequestInterface $request,
+        array $bundle
+    ) {
+        return $this->getLogMessage(
+            $request,
+            $bundle,
+            "[%s] %s %s stored in cache (expires in %ss)"
+        );
+    }
+
+    /**
+     * Returns the log message for when a bundle is fetched from the cache.
+     *
+     * @param RequestInterface $request The request that produced the response.
+     * @param array $bundle The stored response bundle.
+     *
+     * @return string The log message.
+     */
+    protected function getFetchedLogMessage(
+        RequestInterface $request,
+        array $bundle
+    ) {
+        return $this->getLogMessage(
+            $request,
+            $bundle,
+            "[%s] %s %s fetched from cache (expires in %ss)"
+        );
     }
 
     /**
      * Uses the default handler to send the request, then promises to store the
-     * response. Only stores if 'ttl' is greater than 0.
+     * response. Only stores the request if 'expire' is greater than 0.
      *
+     * @param RequestInterface $request The request to send.
      * @param string $key The key to store the response to.
+     * @param array $options Configuration options.
      *
-     * @return \GuzzleHttp\Promise\PromiseInterface
+     * @return PromiseInterface
      */
-    private function store(RequestInterface $request, array $options, $key)
+    protected function store(RequestInterface $request, $key, array $options)
     {
-        $response = call_user_func($this->handler, $request, $options);
+        $default = $this->handler->__invoke($request, $options);
 
-        if ($this->options['expire'] > 0) {
-            return $response->then($this->doStore($key));
+        if ($this->options['expire'] <= 0) {
+            return $default;
         }
 
-        return $response;
+        return $default->then(function ($response) use ($request, $key) {
+
+            // Build the response bundle to be stored
+            $bundle = $this->buildCacheBundle($response);
+
+            $this->doStore($key, $bundle);
+            $this->logStoredBundle($request, $bundle);
+
+            return $response;
+        });
     }
 
     /**
@@ -223,17 +395,17 @@ class CacheHandler
      *
      * @param string $key The key to fetch.
      *
-     * @return \Psr\Http\Message\ResponseInterface|null
+     * @return array|null Bundle from cache or null if expired.
      */
-    private function doFetch($key)
+    protected function doFetch($key)
     {
-        $bundle = $this->provider->fetch($key);
+        $bundle = $this->cache->fetch($key);
 
         if (time() < $bundle['expires']) {
-            return $bundle['response'];
+            return $bundle;
         }
 
-        $this->provider->delete($key);
+        $this->cache->delete($key);
     }
 
     /**
@@ -241,11 +413,11 @@ class CacheHandler
      *
      * @param string $key The key to fetch.
      *
-     * @return \Psr\Http\Message\ResponseInterface|null
+     * @return array|null A response bundle or null if expired.
      */
-    private function fetch($key)
+    protected function fetch($key)
     {
-        if ($this->provider->contains($key)) {
+        if ($this->cache->contains($key)) {
             return $this->doFetch($key);
         }
     }

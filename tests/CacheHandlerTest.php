@@ -4,117 +4,198 @@ namespace Concat\Http\Handler\Test;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\Psr7\Response;
-use Concat\Http\Handler\CacheHandler;
+use Psr\Log\LoggerInterface;
 use Doctrine\Common\Cache\ArrayCache;
+use Concat\Http\Handler\CacheHandler;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
+use Mockery as m;
 
 class CacheHandlerTest extends \PHPUnit_Framework_TestCase
 {
-
-    private function create(array $options)
+    public function tearDown()
     {
-        $defaults = [
-            'responses' => 1,
-            'expire' => 60,
-            'methods' => ['GET'],
+        m::close();
+    }
+
+    private function getFunction($class, $name)
+    {
+        $class = new \ReflectionClass($class);
+        $function = $class->getMethod($name);
+        $function->setAccessible(true);
+        return $function;
+    }
+
+    public function providerTestFilter()
+    {
+        return [
+            [true, true],
+            [true, false],
+            [true, null],
+            [true, function ($request) { return true; }],
+            [false, function ($request) { return false; }],
         ];
-        $options = array_merge($defaults, $options);
-
-        $cache = new ArrayCache();
-        $defaultHandler = new MockHandler([new Response(200, [])]);
-        $cacheHandler = new CacheHandler($cache, $defaultHandler, $options);
-        $client = new Client(['handler' => $cacheHandler]);
-
-        return compact('cache', 'client');
+    }
+    /**
+     * @dataProvider providerTestFilter
+     */
+    public function testFilter($expected, $filter)
+    {
+        $function = $this->getFunction(CacheHandler::class, 'filter');
+        $handler = new CacheHandler();
+        $handler->setOptions(['filter' => $filter]);
+        $request = m::mock(RequestInterface::class);
+        $this->assertEquals($expected, $function->invoke($handler, $request, $filter));
     }
 
-    private function stored($cache)
+    public function providerTestCheckMethod()
     {
-        return $cache->contains('GET:/:2e0ec6d556792df9bf25a1b3fd097058');
-    }
-
-    public function testFetch()
-    {
-        extract($this->create([
-            'expire' => 60,
-        ]));
-
-        $client->get('/');
-        $this->assertTrue($this->stored($cache));
-
-        // would throw an exception if the request is made
-        $client->get('/');
+        return [
+            [true, 'GET', ['GET']],
+            [true, 'GET', ['GET', 'POST']],
+            [false, 'GET', ['HEAD']],
+        ];
     }
 
     /**
-     * @expectedException OutOfBoundsException
+     * @dataProvider providerTestCheckMethod
      */
-    public function testExpire()
+    public function testCheckMethod($expected, $method, $methods)
     {
-        extract($this->create([
+        $function = $this->getFunction(CacheHandler::class, 'checkMethod');
+        $handler = new CacheHandler();
+        $handler->setOptions(['methods' => $methods]);
+
+        $request = m::mock(RequestInterface::class);
+        $request->shouldReceive('getMethod')->andReturn($method);
+
+        $this->assertEquals($expected, $function->invoke($handler, $request));
+    }
+
+    public function testRequestShouldStore()
+    {
+        $response = m::mock(ResponseInterface::class);
+
+        $cache = new ArrayCache();
+
+        $mockHandler = new MockHandler([
+            $response,
+        ]);
+
+        $handler = new CacheHandler($cache, $mockHandler, [
+            'expire' => 10,
+        ]);
+
+        $client = new Client(['handler' => $handler]);
+
+        $key = 'GET:/:2e0ec6d556792df9bf25a1b3fd097058';
+
+        $client->get('/');
+        $this->assertTrue($cache->contains($key));
+        $client->get('/');
+    }
+
+    public function testCacheShouldDeleteIfExpired()
+    {
+        $response = m::mock(ResponseInterface::class);
+
+        $cache = m::mock(ArrayCache::class . "[fetch,delete]");
+        $cache->shouldReceive('fetch')->times(1)->andReturn([
+            'response' => $response,
+            'expires' => time() - 1000,
+        ]);
+        $cache->shouldReceive('delete')->times(1);
+
+        $mockHandler = new MockHandler([
+            $response,
+            $response,
+        ]);
+
+        $handler = new CacheHandler($cache, $mockHandler, [
             'expire' => 1,
-        ]));
+        ]);
 
+        $client = new Client(['handler' => $handler]);
+
+        $key = 'GET:/:2e0ec6d556792df9bf25a1b3fd097058';
+
+        $this->assertFalse($cache->contains($key));
         $client->get('/');
-        $this->assertTrue($this->stored($cache));
-
-        sleep(1);
-
-        // would throw an exception if the request is made
+        $this->assertTrue($cache->contains($key));
         $client->get('/');
+        $this->assertTrue($cache->contains($key));
     }
 
-    public function testSkipStore()
+    public function testZeroExpireShouldNotStore()
     {
-        extract($this->create([
+        $response = m::mock(ResponseInterface::class);
+
+        $cache = new ArrayCache();
+
+        $mockHandler = new MockHandler([
+            $response,
+            $response,
+        ]);
+
+        $handler = new CacheHandler($cache, $mockHandler, [
             'expire' => 0,
-        ]));
+        ]);
+
+        $client = new Client(['handler' => $handler]);
+
+        $key = 'GET:/:2e0ec6d556792df9bf25a1b3fd097058';
 
         $client->get('/');
-        $this->assertFalse($this->stored($cache));
+        $this->assertFalse($cache->contains($key));
+        $client->get('/');
     }
 
-    public function testBadMethod()
+    public function testShouldNotCache()
     {
-        extract($this->create([
-            'methods' => [],
-        ]));
+        $response = m::mock(ResponseInterface::class);
+
+        $cache = new ArrayCache();
+
+        $mockHandler = new MockHandler([
+            $response,
+        ]);
+
+        $handler = new CacheHandler($cache, $mockHandler, [
+            'expire' => 0,
+            'methods' => ["PUT"],
+        ]);
+
+        $client = new Client(['handler' => $handler]);
+
+        $key = 'GET:/:2e0ec6d556792df9bf25a1b3fd097058';
 
         $client->get('/');
-        $this->assertFalse($this->stored($cache));
+        $this->assertFalse($cache->contains($key));
     }
 
-    public function testFalseFilter()
+    public function testLogger()
     {
-        extract($this->create([
-            'filter' => function ($request) {
-                return false;
-            },
-        ]));
+        $response = m::mock(ResponseInterface::class);
+
+        $cache = new ArrayCache();
+
+        $mockHandler = new MockHandler([
+            $response,
+        ]);
+
+        $handler = new CacheHandler($cache, $mockHandler, [
+            'expire' => 10,
+        ]);
+
+        $logger = m::mock(LoggerInterface::class);
+
+        $logger->shouldReceive('log')->times(2)->with(m::type('string'), m::type('string'), m::type('array'));
+
+        $handler->setLogger($logger);
+
+        $client = new Client(['handler' => $handler]);
 
         $client->get('/');
-        $this->assertFalse($this->stored($cache));
-    }
-
-    public function testTrueFilter()
-    {
-        extract($this->create([
-            'filter' => function ($request) {
-                return true;
-            },
-        ]));
-
         $client->get('/');
-        $this->assertTrue($this->stored($cache));
-    }
-
-    public function testNotCallableFilter()
-    {
-        extract($this->create([
-            'filter' => true,
-        ]));
-
-        $client->get('/');
-        $this->assertTrue($this->stored($cache));
     }
 }
