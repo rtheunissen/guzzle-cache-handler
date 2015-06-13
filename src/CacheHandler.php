@@ -142,7 +142,7 @@ class CacheHandler
     /**
      * Called when a request is made on the client.
      *
-     * @return PromiseInterface
+     * @return \GuzzleHttp\Promise\PromiseInterface
      */
     public function __invoke(RequestInterface $request, array $options)
     {
@@ -199,7 +199,7 @@ class CacheHandler
      * @param RequestInterface $request The request to cache.
      * @param array $options Configuration options.
      *
-     * @return GuzzleHttp\Promise\PromiseInterface
+     * @return \GuzzleHttp\Promise\PromiseInterface
      */
     protected function cache(RequestInterface $request, array $options)
     {
