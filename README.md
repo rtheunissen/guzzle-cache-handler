@@ -13,26 +13,38 @@ composer require rtheunissen/guzzle-cache-handler
 ```
 
 ## Usage
-Provide an instance of `Doctrine\Common\Cache\CacheProvider` to cache the response. `ApcCache` is used as the default if
-not provided.
+This is a handler which caches responses for a given amount of time. You will need
+an implemented [CacheProvider](https://github.com/doctrine/cache/tree/master/lib/Doctrine/Common/Cache) and a callable [handler](https://github.com/guzzle/guzzle/tree/master/src/Handler). You also have the option
+of setting a [Logger](https://github.com/php-fig/log) such as [Monolog](https://github.com/Seldaek/monolog), which will log store and fetch events.
 
-Provide a Guzzle handler to use when the cache is not valid. `GuzzleHttp\choose_handler` is used as the default if
-not provided.
+Default implementations are [ApcCache](https://github.com/doctrine/cache/blob/master/lib/Doctrine/Common/Cache/ApcCache.php) and [Guzzle\choose_handler](https://github.com/guzzle/guzzle/blob/master/src/functions.php#L103).
 
 ```php
-$handler = new \Concat\Http\Handler\CacheHandler($cacheProvider, $defaultHandler, [
+use Concat\Http\Handler\CacheHandler;
 
-    // HTTP methods that should be cached
+// Create a cache handler with a given cache provider and default handler.
+$handler = new CacheHandler($cacheProvider, $defaultHandler, [
+
+    /**
+     * @var array HTTP methods that should be cached.
+     */
     'methods' => ['GET', 'HEAD', 'OPTIONS'],
 
-    // Time in seconds to cache the response for
+    /**
+     * @var integer Time in seconds to cache a response for.
+     */
     'expire' => 60,
 
-    // Accepts a request and returns true if it should be cached
+    /**
+     * @var callable Accepts a request and returns true if it should be cached.
+     */
     'filter' => null,
 ]);
 
+// Use a PSR-3 compliant logger to log when bundles are stored or fetched.
+$handler->setLogger($logger);
 
+// Create a Guzzle 6 client, passing the cache handler as 'handler'.
 $client = new Client([
     'handler' => $handler
 ]);
