@@ -49,11 +49,9 @@ class CacheHandler
         callable $handler = null,
         array $options = []
     ) {
-        $cache   = $cache   ?: $this->getDefaultCacheProvider();
-        $handler = $handler ?: $this->getDefaultHandler();
+        $this->cache   = $cache   ?: $this->getDefaultCacheProvider();
+        $this->handler = $handler ?: $this->getDefaultHandler();
 
-        $this->setCacheProvider($cache);
-        $this->setHandler($handler);
         $this->setOptions($options);
     }
 
@@ -207,14 +205,27 @@ class CacheHandler
         $key = $this->generateKey($request, $options);
 
         // Attempt to fetch a response bundle from the cache
-        $bundle = $this->fetch($key);
-
-        if ($bundle) {
-            $this->logFetchedBundle($request, $bundle);
-            return new FulfilledPromise($bundle['response']);
+        if ($bundle = $this->fetch($key)) {
+            return $this->fetched($request, $bundle);
         }
 
         return $this->store($request, $key, $options);
+    }
+
+    /**
+     * Returns a fulfilled promise which yields the response from a given
+     * request bundle. This will invoke the `onFulfilled` callback on the
+     * handler, and ignore further callbacks.
+     *
+     * @param RequestInterface $request The request that initiated the response.
+     * @param array $bundle The fetched response bundle.
+     *
+     * @return FulfilledPromise
+     */
+    protected function fetched(RequestInterface $request, array $bundle)
+    {
+        $this->logFetchedBundle($request, $bundle);
+        return new FulfilledPromise($bundle['response']);
     }
 
     /**
