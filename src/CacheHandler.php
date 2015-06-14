@@ -59,6 +59,8 @@ class CacheHandler
      * Sets the fallback handler to use when the cache is invalid.
      *
      * @param callable $handler
+     *
+     * @codeCoverageIgnore
      */
     public function setHandler(callable $handler)
     {
@@ -69,6 +71,8 @@ class CacheHandler
      * Sets the cache provider.
      *
      * @param CacheProvider $cache
+     *
+     * @codeCoverageIgnore
      */
     public function setCacheProvider(CacheProvider $cache)
     {
