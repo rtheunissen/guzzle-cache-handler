@@ -301,7 +301,10 @@ class CacheHandler
             // Build the response bundle to be stored
             $bundle = $this->buildCacheBundle($response);
 
+            // Store the bundle in the cache
             $this->doStore($key, $bundle);
+
+            // Log that it has been stored
             $this->logStoredBundle($request, $bundle);
 
             return $response;
@@ -397,7 +400,7 @@ class CacheHandler
         $format
     ) {
         return vsprintf($format, [
-            gmdate('c'),
+            gmdate("d/M/Y:H:i:s O"),
             $request->getMethod(),
             $request->getUri(),
             $bundle['expires'] - time(),
