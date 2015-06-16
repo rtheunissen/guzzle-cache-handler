@@ -1,6 +1,7 @@
 {
     "name": "rtheunissen/guzzle-cache-handler",
-    "description": "Guzzle handler used to cache responses",
+    "description": "Guzzle 6 handler used to cache responses",
+    "keywords": ["guzzle", "http", "handler", "cache", "psr7"],
     "license": "MIT",
     "authors": [
         {
