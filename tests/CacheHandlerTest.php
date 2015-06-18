@@ -7,8 +7,8 @@ use GuzzleHttp\Handler\MockHandler;
 use Psr\Log\LoggerInterface;
 use Doctrine\Common\Cache\ArrayCache;
 use Concat\Http\Handler\CacheHandler;
-use Psr\Http\Message\RequestInterface;
-use Psr\Http\Message\ResponseInterface;
+use GuzzleHttp\Psr7\Request;
+use GuzzleHttp\Psr7\Response;
 use Mockery as m;
 
 class CacheHandlerTest extends \PHPUnit_Framework_TestCase
@@ -44,7 +44,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         $function = $this->getFunction(CacheHandler::class, 'filter');
         $handler = new CacheHandler();
         $handler->setOptions(['filter' => $filter]);
-        $request = m::mock(RequestInterface::class);
+        $request = m::mock(Request::class);
         $this->assertEquals($expected, $function->invoke($handler, $request, $filter));
     }
 
@@ -66,7 +66,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         $handler = new CacheHandler();
         $handler->setOptions(['methods' => $methods]);
 
-        $request = m::mock(RequestInterface::class);
+        $request = m::mock(Request::class);
         $request->shouldReceive('getMethod')->andReturn($method);
 
         $this->assertEquals($expected, $function->invoke($handler, $request));
@@ -74,7 +74,8 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
 
     public function testRequestShouldStore()
     {
-        $response = m::mock(ResponseInterface::class);
+        $response = m::mock(Response::class);
+        $response->shouldReceive('getStatusCode')->andReturn(200);
 
         $cache = new ArrayCache();
 
@@ -97,7 +98,8 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
 
     public function testCacheShouldDeleteIfExpired()
     {
-        $response = m::mock(ResponseInterface::class);
+        $response = m::mock(Response::class);
+        $response->shouldReceive('getStatusCode')->andReturn(200);
 
         $cache = m::mock(ArrayCache::class . "[fetch,delete]");
         $cache->shouldReceive('fetch')->times(1)->andReturn([
@@ -126,9 +128,57 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         $this->assertTrue($cache->contains($key));
     }
 
+    /**
+     * @expectedException RuntimeException
+     */
+    public function testCacheFetchException()
+    {
+        $response = m::mock(Response::class);
+        $response->shouldReceive('getStatusCode')->andReturn(200);
+
+        $cache = m::mock(ArrayCache::class . "[fetch]");
+        $cache->shouldReceive('fetch')->andReturn(false);
+
+        $mockHandler = new MockHandler([
+            $response,
+        ]);
+
+        $handler = new CacheHandler($cache, $mockHandler, [
+            'expire' => 1,
+        ]);
+
+        $client = new Client(['handler' => $handler]);
+        $client->get('/');
+        $client->get('/');
+    }
+
+    /**
+     * @expectedException RuntimeException
+     */
+    public function testCacheStoreException()
+    {
+        $response = m::mock(Response::class);
+        $response->shouldReceive('getStatusCode')->andReturn(200);
+
+        $cache = m::mock(ArrayCache::class . "[save]");
+        $cache->shouldReceive('save')->andReturn(false);
+
+        $mockHandler = new MockHandler([
+            $response,
+        ]);
+
+        $handler = new CacheHandler($cache, $mockHandler, [
+            'expire' => 1,
+        ]);
+
+        $client = new Client(['handler' => $handler]);
+        $client->get('/');
+    }
+
     public function testZeroExpireShouldNotStore()
     {
-        $response = m::mock(ResponseInterface::class);
+        $response = m::mock(Response::class);
+        $response->shouldReceive('getStatusCode')->andReturn(200);
 
         $cache = new ArrayCache();
 
@@ -150,9 +200,10 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         $client->get('/');
     }
 
-    public function testShouldNotCache()
+    public function testShouldNotCacherRequest()
     {
-        $response = m::mock(ResponseInterface::class);
+        $response = m::mock(Response::class);
+        $response->shouldReceive('getStatusCode')->andReturn(200);
 
         $cache = new ArrayCache();
 
@@ -173,9 +224,10 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         $this->assertFalse($cache->contains($key));
     }
 
-    public function testLogger()
+    public function testShouldNotCacheResponse()
     {
-        $response = m::mock(ResponseInterface::class);
+        $response = m::mock(Response::class);
+        $response->shouldReceive('getStatusCode')->andReturn(400);
 
         $cache = new ArrayCache();
 
@@ -187,14 +239,72 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
             'expire' => 10,
         ]);
 
+        $client = new Client(['handler' => $handler]);
+
+        $key = 'GET:/:2e0ec6d556792df9bf25a1b3fd097058';
+
+        $client->get('/');
+        $this->assertFalse($cache->contains($key));
+    }
+
+    public function providerTestLogger()
+    {
+        return [
+            ["debug"],
+            [function() { return "debug"; }],
+            [null],
+        ];
+    }
+
+    /**
+     * @dataProvider providerTestLogger
+     */
+    public function testLogger($level)
+    {
+        $response = m::mock(Response::class);
+        $response->shouldReceive('getStatusCode')->andReturn(200);
+
+        $cache = new ArrayCache();
+
+        $mockHandler = new MockHandler([
+            $response,
+        ]);
+
+        $handler = new CacheHandler($cache, $mockHandler, [
+            'expire' => 10,
+        ]);
+
+        if ($level) {
+            $handler->setLogLevel($level);
+        }
+
         $logger = m::mock(LoggerInterface::class);
 
-        $logger->shouldReceive('log')->times(2)->with(m::type('string'), m::type('string'), m::type('array'));
+        $logger->shouldReceive('log')->times(1)->with(
+            "debug",
+            m::on(function($message){
+                return strpos($message, 'stored') !== false;
+            }),
+            m::on(function($context){
+                return isset($context['response'], $context['expires']);
+            })
+        );
+
+        $logger->shouldReceive('log')->times(2)->with(
+            "debug",
+            m::on(function($message){
+                return strpos($message, 'fetched') !== false;
+            }),
+            m::on(function($context){
+                return isset($context['response'], $context['expires']);
+            })
+        );
 
         $handler->setLogger($logger);
 
         $client = new Client(['handler' => $handler]);
 
+        $client->get('/');
         $client->get('/');
         $client->get('/');
     }

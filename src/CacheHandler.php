@@ -2,14 +2,15 @@
 
 namespace Concat\Http\Handler;
 
-use Psr\Http\Message\RequestInterface;
-use Psr\Http\Message\ResponseInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
+use GuzzleHttp\Psr7\Response;
+use GuzzleHttp\Psr7\Request;
 use Doctrine\Common\Cache\CacheProvider;
 use Doctrine\Common\Cache\ApcCache;
 use GuzzleHttp\Promise\FulfilledPromise;
 use GuzzleHttp\Promise\PromiseInterface;
+use RuntimeException;
 
 /**
  * Guzzle handler used to cache responses using Doctrine\Common\Cache.
@@ -31,6 +32,11 @@ class CacheHandler
      * @var \Psr\Log\LoggerInterface PSR-3 compliant logger.
      */
     protected $logger;
+
+    /**
+     * @var string|callable Constant or callable that accepts a Response.
+     */
+    protected $logLevel;
 
     /**
      * @var array Configuration options.
@@ -135,7 +141,7 @@ class CacheHandler
             'methods' => ['GET', 'HEAD', 'OPTIONS'],
 
             // Time in seconds to cache the response for
-            'expire'  => 60,
+            'expire'  => 30,
 
             // Accepts a request and returns true if it should be cached
             'filter'  => null,
@@ -147,24 +153,129 @@ class CacheHandler
      *
      * @return PromiseInterface
      */
-    public function __invoke(RequestInterface $request, array $options)
+    public function __invoke(Request $request, array $options)
     {
-        if ($this->shouldCache($request)) {
+        if ($this->shouldCacheRequest($request)) {
             return $this->cache($request, $options);
         }
 
-        return call_user_func($this->handler, $request, $options);
+        return $this->invokeDefault($request, $options);
+    }
+
+    /**
+     * Attempts to fetch, otherwise promises to cache a response when the
+     * default handler fulfills its promise.
+     *
+     * @param Request $request The request to cache.
+     * @param array $options Configuration options.
+     *
+     * @return PromiseInterface
+     */
+    protected function cache(Request $request, array $options)
+    {
+        $key = $this->getKey($request, $options);
+
+        if ($this->cache->contains($key)) {
+
+            // Return the cached response if fetch was successful.
+            if ($response = $this->fetch($request, $key)) {
+                return new FulfilledPromise($response);
+            }
+        }
+
+        // Make the request using the default handler.
+        $promise = $this->invokeDefault($request, $options);
+
+        // Don't store if the expire time isn't positive.
+        if ($this->options['expire'] <= 0) {
+            return $promise;
+        }
+
+        // Promise to store the response once the default promise is fulfilled.
+        return $promise->then(function ($response) use ($request, $key) {
+            $this->store($request, $response, $key);
+        });
+    }
+
+    /**
+     * Attempts to fetch a response bundle from the cache for the given key.
+     *
+     * @param Request $request
+     * @param string $key
+     *
+     * @return Response|null A response null if invalid.
+     */
+    protected function fetch(Request $request, $key)
+    {
+        $bundle = $this->fetchBundle($key);
+
+        if ($bundle) {
+            $this->logFetchedBundle($request, $bundle);
+            return $bundle['response'];
+        }
+    }
+
+    /**
+     * Fetches a response bundle from the cache for a given key.
+     *
+     * @param string $key The key to fetch.
+     *
+     * @return array|null Bundle from cache or null if expired.
+     */
+    protected function fetchBundle($key)
+    {
+        $bundle = $this->cache->fetch($key);
+
+        if ($bundle === false) {
+            throw new RuntimeException("Failed to fetch response from cache");
+        }
+
+        if (time() < $bundle['expires']) {
+            return $bundle;
+        }
+
+        // Delete expired entries so that they don't trigger 'contains'.
+        $this->cache->delete($key);
+    }
+
+    /**
+     * Builds and stores a cache bundle if the response should be stored.
+     *
+     * @param Request $request
+     * @param Response $response
+     * @param string $key
+     *
+     * @throws RuntimeException if it fails to store the response in the cache.
+     */
+    protected function store(Request $request, Response $response, $key)
+    {
+        // Check if response code should be stored.
+        if ($this->shouldCacheResponse($response)) {
+
+            // Build the response bundle to be stored
+            $bundle = $this->buildCacheBundle($response);
+
+            // Store the bundle in the cache
+            $save = $this->cache->save($key, $bundle, $this->options['expire']);
+
+            if ($save === false) {
+                throw new RuntimeException("Failed to store response to cache");
+            }
+
+            // Log that it has been stored
+            $this->logStoredBundle($request, $bundle);
+        }
     }
 
     /**
      * Filters the request using a configured filter to determine if it should
      * be cached.
      *
-     * @param RequestInterface The request to filter.
+     * @param Request The request to filter.
      *
      * @return boolean true if should be cached, false otherwise.
      */
-    protected function filter(RequestInterface $request)
+    protected function filter(Request $request)
     {
         $filter = $this->options['filter'];
         return ! is_callable($filter) || $filter($request);
@@ -173,11 +284,11 @@ class CacheHandler
     /**
      * Checks the method of the request to determine if it should be cached.
      *
-     * @param RequestInterface The request to filter.
+     * @param Request The request to filter.
      *
      * @return boolean true if should be cached, false otherwise.
      */
-    protected function checkMethod(RequestInterface $request)
+    protected function checkMethod(Request $request)
     {
         $methods = (array) $this->options['methods'];
         return in_array($request->getMethod(), $methods);
@@ -186,62 +297,35 @@ class CacheHandler
     /**
      * Returns true if the given request should be cached.
      *
-     * @param RequestInterface $request The request to check.
+     * @param Request $request The request to check.
      *
      * @return boolean true if the request should be cached, false otherwise.
      */
-    protected function shouldCache(RequestInterface $request)
+    private function shouldCacheRequest(Request $request)
     {
         return $this->checkMethod($request) && $this->filter($request);
     }
 
     /**
-     * Attempts to fetch the response from the cache, otherwise returns a
-     * promise to store the response produced by the default handler.
+     * Determines if a response should be cached.
      *
-     * @param RequestInterface $request The request to cache.
-     * @param array $options Configuration options.
-     *
-     * @return PromiseInterface
+     * @param Response $response
      */
-    protected function cache(RequestInterface $request, array $options)
+    protected function shouldCacheResponse(Response $response)
     {
-        $key = $this->generateKey($request, $options);
-
-        // Attempt to fetch a response bundle from the cache
-        if ($bundle = $this->fetch($key)) {
-            return $this->fetched($request, $bundle);
-        }
-
-        return $this->store($request, $key, $options);
-    }
-
-    /**
-     * Returns a fulfilled promise which yields the response from a given
-     * request bundle. This will invoke the `onFulfilled` callback on the
-     * handler, and ignore further callbacks.
-     *
-     * @param RequestInterface $request The request that initiated the response.
-     * @param array $bundle The fetched response bundle.
-     *
-     * @return FulfilledPromise
-     */
-    protected function fetched(RequestInterface $request, array $bundle)
-    {
-        $this->logFetchedBundle($request, $bundle);
-        return new FulfilledPromise($bundle['response']);
+        return $response && $response->getStatusCode() < 400;
     }
 
     /**
      * Generates the cache key for the given request and request options. The
      * namespace should be set on the cache provider.
      *
-     * @param RequestInterface $request The request to generate a key for.
+     * @param Request $request The request to generate a key for.
      * @param array $options Configuration options.
      *
      * @return string The cache key
      */
-    protected function generateKey(RequestInterface $request, array $options)
+    protected function getKey(Request $request, array $options)
     {
         return join(":", [
             $request->getMethod(),
@@ -253,11 +337,11 @@ class CacheHandler
     /**
      * Builds a cache bundle using a given response.
      *
-     * @param ResponseInterface $response
+     * @param Response $response
      *
      * @return array The response bundle to cache.
      */
-    protected function buildCacheBundle(ResponseInterface $response)
+    protected function buildCacheBundle(Response $response)
     {
         return [
             'response' => $response,
@@ -266,108 +350,58 @@ class CacheHandler
     }
 
     /**
-     * Stores a given response bundle to a given key.
+     * Invokes the default handler to produce a promise.
      *
-     * @param string $key The key to store the response to.
-     * @param array $bundle The response bundle.
-     */
-    protected function doStore($key, $bundle)
-    {
-        $this->cache->save($key, $bundle, $this->options['expire']);
-    }
-
-    /**
-     * Uses the default handler to send the request, then promises to store the
-     * response. Only stores the request if 'expire' is greater than 0.
-     *
-     * @param RequestInterface $request The request to store.
-     * @param string $key The key to store the response to.
-     * @param array $options Configuration options.
+     * @param Request $request
+     * @param array $options
      *
      * @return PromiseInterface
      */
-    protected function store(RequestInterface $request, $key, array $options)
+    protected function invokeDefault(Request $request, array $options)
     {
-        $default = call_user_func($this->handler, $request, $options);
-
-        if ($this->options['expire'] <= 0) {
-            return $default;
-        }
-
-        return $this->promiseToStore($request, $default, $key);
+        return call_user_func($this->handler, $request, $options);
     }
 
     /**
-     * Returns a promise to store a response when it is received.
-     *
-     * @param RequestInterface $request The request to store.
-     * @param PromiseInterface $default The default handler promise.
-     * @param string $key The key to store the response to.
-     *
-     * @return PromiseInterface
-     */
-    protected function promiseToStore(
-        RequestInterface $request,
-        PromiseInterface $default,
-        $key
-    ) {
-        $promise = function (ResponseInterface $response) use ($request, $key) {
-
-            // Build the response bundle to be stored
-            $bundle = $this->buildCacheBundle($response);
-
-            // Store the bundle in the cache
-            $this->doStore($key, $bundle);
-
-            // Log that it has been stored
-            $this->logStoredBundle($request, $bundle);
-
-            return $response;
-        };
-
-        return $default->then($promise);
-    }
-
-    /**
-     * Fetches a response from the cache for a given key, null if invalid.
-     *
-     * @param string $key The key to fetch.
-     *
-     * @return array|null Bundle from cache or null if expired.
-     */
-    protected function doFetch($key)
-    {
-        $bundle = $this->cache->fetch($key);
-
-        if (time() < $bundle['expires']) {
-            return $bundle;
-        }
-
-        $this->cache->delete($key);
-    }
-
-    /**
-     * Checks if the cache containers the given key, then fetched it.
-     *
-     * @param string $key The key to fetch.
-     *
-     * @return array|null A response bundle or null if expired.
-     */
-    protected function fetch($key)
-    {
-        if ($this->cache->contains($key)) {
-            return $this->doFetch($key);
-        }
-    }
-
-    /**
-     * Returns the log level to use when logging bundles.
+     * Returns the default log level to use when logging response bundles.
      *
      * @return string LogLevel
      */
-    protected function getLogLevel()
+    protected function getDefaultLogLevel()
     {
         return LogLevel::DEBUG;
+    }
+
+    /**
+     * Sets the log level to use, which can be either a string or a callable
+     * that accepts a response (which could be null). A log level could also
+     * be null, which indicates that the default log level should be used.
+     *
+     * @param string|callable|null
+     */
+    public function setLogLevel($logLevel)
+    {
+        $this->logLevel = $logLevel;
+    }
+
+    /**
+     * Returns a log level for a given response.
+     *
+     * @param ResponseInterface $response The response being logged.
+     *
+     * @return string LogLevel
+     */
+    protected function getLogLevel(Response $response)
+    {
+        if ( ! $this->logLevel) {
+            return $this->getDefaultLogLevel($response);
+        }
+
+        if (is_callable($this->logLevel)) {
+            return call_user_func($this->logLevel, $response);
+        }
+
+        return (string) $this->logLevel;
     }
 
     /**
@@ -376,44 +410,42 @@ class CacheHandler
     private function log($message, $bundle)
     {
         if (isset($this->logger)) {
-            $this->logger->log($this->getLogLevel(), $message, $bundle);
+
+            $level   = $this->getLogLevel($bundle['response']);
+            $message = $message;
+            $context = $bundle;
+
+            $this->logger->log($level, $message, $context);
         }
     }
 
     /**
      * Logs that a bundle has been stored in the cache.
      *
-     * @param RequestInterface $request The request.
+     * @param Request $request The request.
      * @param array $bundle The stored response bundle.
      */
-    protected function logStoredBundle(
-        RequestInterface $request,
-        array $bundle
-    ) {
+    protected function logStoredBundle(Request $request, array $bundle)
+    {
         $this->log($this->getStoredLogMessage($request, $bundle), $bundle);
     }
 
     /**
      * Logs that a bundle has been fetched from the cache.
      *
-     * @param RequestInterface $request The request that produced the response.
+     * @param Request $request The request that produced the response.
      * @param array $bundle The fetched response bundle.
      */
-    protected function logFetchedBundle(
-        RequestInterface $request,
-        array $bundle
-    ) {
+    protected function logFetchedBundle(Request $request, array $bundle)
+    {
         $this->log($this->getFetchedLogMessage($request, $bundle), $bundle);
     }
 
     /**
      * Internal abstraction for log messages.
      */
-    private function getLogMessage(
-        RequestInterface $request,
-        array $bundle,
-        $format
-    ) {
+    private function getLogMessage(Request $request, array $bundle, $format)
+    {
         return vsprintf($format, [
             gmdate("d/M/Y:H:i:s O"),
             $request->getMethod(),
@@ -425,15 +457,13 @@ class CacheHandler
     /**
      * Returns the log message for when a bundle is stored in the cache.
      *
-     * @param RequestInterface $request The request that produced the response.
+     * @param Request $request The request that produced the response.
      * @param array $bundle The stored response bundle.
      *
      * @return string The log message.
      */
-    protected function getStoredLogMessage(
-        RequestInterface $request,
-        array $bundle
-    ) {
+    protected function getStoredLogMessage(Request $request, array $bundle)
+    {
         return $this->getLogMessage(
             $request,
             $bundle,
@@ -444,15 +474,13 @@ class CacheHandler
     /**
      * Returns the log message for when a bundle is fetched from the cache.
      *
-     * @param RequestInterface $request The request that produced the response.
+     * @param Request $request The request that produced the response.
      * @param array $bundle The stored response bundle.
      *
      * @return string The log message.
      */
-    protected function getFetchedLogMessage(
-        RequestInterface $request,
-        array $bundle
-    ) {
+    protected function getFetchedLogMessage(Request $request, array $bundle)
+    {
         return $this->getLogMessage(
             $request,
             $bundle,
