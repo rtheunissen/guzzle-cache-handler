@@ -206,9 +206,10 @@ class CacheHandler
         $key = $this->getKey($request, $options);
 
         if ($this->cache->contains($key)) {
+            $response = $this->fetch($request, $key);
 
             // Return the cached response if fetch was successful.
-            if ($response = $this->fetch($request, $key)) {
+            if ($response) {
                 return new FulfilledPromise($response);
             }
         }
@@ -281,8 +282,6 @@ class CacheHandler
     {
         // Check if response code should be stored.
         if ($this->shouldCacheResponse($response)) {
-
-            // Build the response bundle to be stored
             $bundle = $this->buildCacheBundle($response);
 
             // Store the bundle in the cache
@@ -423,7 +422,7 @@ class CacheHandler
      */
     protected function getLogLevel(Response $response)
     {
-        if ( ! $this->logLevel) {
+        if (is_null($this->logLevel)) {
             return $this->getDefaultLogLevel($response);
         }
 
@@ -440,7 +439,6 @@ class CacheHandler
     private function log($message, $bundle)
     {
         if (isset($this->logger)) {
-
             $level   = $this->getLogLevel($bundle['response']);
             $message = $message;
             $context = $bundle;
@@ -495,13 +493,18 @@ class CacheHandler
      * Formats a request and response as a log message.
      *
      * @param RequestInterface $request
-     * @param ResponseInterface|null $response
-     * @param mixed $reason
+     * @param array $bundle
+     * @param string $event
      *
      * @return string The formatted message.
      */
-    protected function getLogMessage(Request $request, array $bundle, $template)
+    protected function getLogMessage(Request $request, array $bundle, $event)
     {
+        $template = $this->prepareTemplate([
+            'event'   => $event,
+            'expires' => $bundle['expires'] - time(),
+        ]);
+
         $response  = $bundle['response'];
         $formatter = new MessageFormatter($template);
 
@@ -518,12 +521,7 @@ class CacheHandler
      */
     protected function getStoredLogMessage(Request $request, array $bundle)
     {
-        $template = $this->prepareTemplate([
-            'event'   => 'stored in cache',
-            'expires' => $bundle['expires'] - time(),
-        ]);
-
-        return $this->getLogMessage($request, $bundle, $template);
+        return $this->getLogMessage($request, $bundle, 'stored in cache');
     }
 
     /**
@@ -536,11 +534,6 @@ class CacheHandler
      */
     protected function getFetchedLogMessage(Request $request, array $bundle)
     {
-        $template = $this->prepareTemplate([
-            'event'   => 'fetched from cache',
-            'expires' => $bundle['expires'] - time(),
-        ]);
-
-        return $this->getLogMessage($request, $bundle, $template);
+        return $this->getLogMessage($request, $bundle, 'fetched from cache');
     }
 }
