@@ -250,7 +250,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
     public function providerTestLogger()
     {
         return [
-            ["debug"],
+            ["debug", "{event}"],
             [function() { return "debug"; }],
             [null],
         ];
@@ -259,7 +259,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
     /**
      * @dataProvider providerTestLogger
      */
-    public function testLogger($level)
+    public function testLogger($level, $template = null)
     {
         $response = m::mock(Response::class);
         $response->shouldReceive('getStatusCode')->andReturn(200);
@@ -273,6 +273,10 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         $handler = new CacheHandler($cache, $mockHandler, [
             'expire' => 10,
         ]);
+
+        if ($template) {
+            $handler->setLogTemplate($template);
+        }
 
         if ($level) {
             $handler->setLogLevel($level);

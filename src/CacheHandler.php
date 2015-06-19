@@ -4,6 +4,7 @@ namespace Concat\Http\Handler;
 
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
+use GuzzleHttp\MessageFormatter;
 use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\Psr7\Request;
 use Doctrine\Common\Cache\CacheProvider;
@@ -37,6 +38,11 @@ class CacheHandler
      * @var string|callable Constant or callable that accepts a Response.
      */
     protected $logLevel;
+
+    /**
+     * @var string Log template.
+     */
+    protected $logTemplate;
 
     /**
      * @var array Configuration options.
@@ -115,6 +121,30 @@ class CacheHandler
     protected function getDefaultCacheProvider()
     {
         return new ApcCache();
+    }
+
+    /**
+     * Sets the template to use when logging cache events.
+     *
+     * @param string $logTemplate
+     */
+    public function setLogTemplate($logTemplate)
+    {
+        $this->logTemplate = $logTemplate;
+    }
+
+    /**
+     * Returns a defined log template, or a default template otherwise.
+     *
+     * @return string Log template.
+     */
+    protected function getLogTemplate()
+    {
+        if (is_null($this->logTemplate)) {
+            return MessageFormatter::SHORT . " {event} (expires in {expires}s)";
+        }
+
+        return $this->logTemplate;
     }
 
     /**
@@ -427,7 +457,8 @@ class CacheHandler
      */
     protected function logStoredBundle(Request $request, array $bundle)
     {
-        $this->log($this->getStoredLogMessage($request, $bundle), $bundle);
+        $message = $this->getStoredLogMessage($request, $bundle);
+        $this->log($message, $bundle);
     }
 
     /**
@@ -438,20 +469,43 @@ class CacheHandler
      */
     protected function logFetchedBundle(Request $request, array $bundle)
     {
-        $this->log($this->getFetchedLogMessage($request, $bundle), $bundle);
+        $message = $this->getFetchedLogMessage($request, $bundle);
+        $this->log($message, $bundle);
     }
 
     /**
-     * Internal abstraction for log messages.
+     * Prepares a log template with optional extra fields.
+     *
+     * @param array $extras
+     *
+     * @return string $template
      */
-    private function getLogMessage(Request $request, array $bundle, $format)
+    protected function prepareTemplate(array $extras)
     {
-        return vsprintf($format, [
-            gmdate("d/M/Y:H:i:s O"),
-            $request->getMethod(),
-            $request->getUri(),
-            $bundle['expires'] - time(),
-        ]);
+        $template = $this->getLogTemplate();
+
+        foreach ($extras as $key => $value) {
+            $template = str_replace('{' . $key . '}', $value, $template);
+        }
+
+        return $template;
+    }
+
+    /**
+     * Formats a request and response as a log message.
+     *
+     * @param RequestInterface $request
+     * @param ResponseInterface|null $response
+     * @param mixed $reason
+     *
+     * @return string The formatted message.
+     */
+    protected function getLogMessage(Request $request, array $bundle, $template)
+    {
+        $response  = $bundle['response'];
+        $formatter = new MessageFormatter($template);
+
+        return $formatter->format($request, $response);
     }
 
     /**
@@ -464,11 +518,12 @@ class CacheHandler
      */
     protected function getStoredLogMessage(Request $request, array $bundle)
     {
-        return $this->getLogMessage(
-            $request,
-            $bundle,
-            "[%s] %s %s stored in cache (expires in %ss)"
-        );
+        $template = $this->prepareTemplate([
+            'event'   => 'stored in cache',
+            'expires' => $bundle['expires'] - time(),
+        ]);
+
+        return $this->getLogMessage($request, $bundle, $template);
     }
 
     /**
@@ -481,10 +536,11 @@ class CacheHandler
      */
     protected function getFetchedLogMessage(Request $request, array $bundle)
     {
-        return $this->getLogMessage(
-            $request,
-            $bundle,
-            "[%s] %s %s fetched from cache (expires in %ss)"
-        );
+        $template = $this->prepareTemplate([
+            'event'   => 'fetched from cache',
+            'expires' => $bundle['expires'] - time(),
+        ]);
+
+        return $this->getLogMessage($request, $bundle, $template);
     }
 }
