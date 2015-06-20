@@ -300,7 +300,7 @@ class CacheHandler
      * Filters the request using a configured filter to determine if it should
      * be cached.
      *
-     * @param Request The request to filter.
+     * @param Request $request The request to filter.
      *
      * @return boolean true if should be cached, false otherwise.
      */
@@ -313,7 +313,7 @@ class CacheHandler
     /**
      * Checks the method of the request to determine if it should be cached.
      *
-     * @param Request The request to filter.
+     * @param Request $request The request to check.
      *
      * @return boolean true if should be cached, false otherwise.
      */
@@ -416,14 +416,14 @@ class CacheHandler
     /**
      * Returns a log level for a given response.
      *
-     * @param ResponseInterface $response The response being logged.
+     * @param Response $response The response being logged.
      *
      * @return string LogLevel
      */
     protected function getLogLevel(Response $response)
     {
         if (is_null($this->logLevel)) {
-            return $this->getDefaultLogLevel($response);
+            return $this->getDefaultLogLevel();
         }
 
         if (is_callable($this->logLevel)) {
@@ -435,15 +435,15 @@ class CacheHandler
 
     /**
      * Convenient internal logger entry point.
+     *
+     * @param string $message
+     * @param array $bundle
      */
-    private function log($message, $bundle)
+    private function log($message, array $bundle)
     {
         if (isset($this->logger)) {
-            $level   = $this->getLogLevel($bundle['response']);
-            $message = $message;
-            $context = $bundle;
-
-            $this->logger->log($level, $message, $context);
+            $level = $this->getLogLevel($bundle['response']);
+            $this->logger->log($level, $message, $bundle);
         }
     }
 
@@ -492,7 +492,7 @@ class CacheHandler
     /**
      * Formats a request and response as a log message.
      *
-     * @param RequestInterface $request
+     * @param Request $request
      * @param array $bundle
      * @param string $event
      *
