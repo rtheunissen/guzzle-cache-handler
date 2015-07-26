@@ -2,14 +2,15 @@
 
 namespace Concat\Http\Handler\Test;
 
+use Concat\Cache\CacheInterface;
+use Concat\Http\Handler\CacheHandler;
+use Doctrine\Common\Cache\ArrayCache;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
-use Psr\Log\LoggerInterface;
-use Doctrine\Common\Cache\ArrayCache;
-use Concat\Http\Handler\CacheHandler;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use Mockery as m;
+use Psr\Log\LoggerInterface;
 
 class CacheHandlerTest extends \PHPUnit_Framework_TestCase
 {
@@ -42,7 +43,8 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
     public function testFilter($expected, $filter)
     {
         $function = $this->getFunction(CacheHandler::class, 'filter');
-        $handler = new CacheHandler();
+        $cache = m::mock(CacheInterface::class);
+        $handler = new CacheHandler($cache);
         $handler->setOptions(['filter' => $filter]);
         $request = m::mock(Request::class);
         $this->assertEquals($expected, $function->invoke($handler, $request, $filter));
@@ -63,7 +65,8 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
     public function testCheckMethod($expected, $method, $methods)
     {
         $function = $this->getFunction(CacheHandler::class, 'checkMethod');
-        $handler = new CacheHandler();
+        $cache = m::mock(CacheInterface::class);
+        $handler = new CacheHandler($cache);
         $handler->setOptions(['methods' => $methods]);
 
         $request = m::mock(Request::class);

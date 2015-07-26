@@ -2,25 +2,26 @@
 
 namespace Concat\Http\Handler;
 
-use Psr\Log\LoggerInterface;
-use Psr\Log\LogLevel;
+use Concat\Cache\CacheInterface;
+use Concat\Cache\Adapter\AdapterFactory;
+use Doctrine\Common\Cache\FilesystemCache;
 use GuzzleHttp\MessageFormatter;
-use GuzzleHttp\Psr7\Response;
-use GuzzleHttp\Psr7\Request;
-use Doctrine\Common\Cache\CacheProvider;
-use Doctrine\Common\Cache\ApcCache;
 use GuzzleHttp\Promise\FulfilledPromise;
 use GuzzleHttp\Promise\PromiseInterface;
+use GuzzleHttp\Psr7\Request;
+use GuzzleHttp\Psr7\Response;
+use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 use RuntimeException;
 
 /**
- * Guzzle handler used to cache responses using Doctrine\Common\Cache.
+ * Guzzle handler used to cache responses.
  */
 class CacheHandler
 {
 
     /**
-     * @var \Doctrine\Common\Cache\CacheProvider Cache provider.
+     * @var \Concat\Cache\CacheInterface Cache provider.
      */
     protected $cache;
 
@@ -52,18 +53,16 @@ class CacheHandler
     /**
      * Constructs a new cache handler.
      *
-     * @param CacheProvider $cache Cache provider.
+     * @param object $cache Cache provider.
      * @param callable $handler Default handler used to send response.
      * @param array $options Configuration options.
      */
-    public function __construct(
-        CacheProvider $cache = null,
-        callable $handler = null,
-        array $options = []
-    ) {
-        $this->cache   = $cache   ?: $this->getDefaultCacheProvider();
-        $this->handler = $handler ?: $this->getDefaultHandler();
+    public function __construct($cache, $handler = null, array $options = [])
+    {
+        $handler = $handler ?: $this->getDefaultHandler();
 
+        $this->setHandler($handler);
+        $this->setCacheProvider($cache);
         $this->setOptions($options);
     }
 
@@ -82,13 +81,11 @@ class CacheHandler
     /**
      * Sets the cache provider.
      *
-     * @param CacheProvider $cache
-     *
-     * @codeCoverageIgnore
+     * @param object $cache
      */
-    public function setCacheProvider(CacheProvider $cache)
+    public function setCacheProvider($cache)
     {
-        $this->cache = $cache;
+        $this->cache = AdapterFactory::get($cache);
     }
 
     /**
@@ -109,18 +106,6 @@ class CacheHandler
     public function setLogger(LoggerInterface $logger)
     {
         $this->logger = $logger;
-    }
-
-    /**
-     * Returns the default cache provider, used if a cache provider is not set.
-     *
-     * @return ApcCache
-     *
-     * @codeCoverageIgnore
-     */
-    protected function getDefaultCacheProvider()
-    {
-        return new ApcCache();
     }
 
     /**
@@ -285,7 +270,7 @@ class CacheHandler
             $bundle = $this->buildCacheBundle($response);
 
             // Store the bundle in the cache
-            $save = $this->cache->save($key, $bundle, $this->options['expire']);
+            $save = $this->cache->store($key, $bundle, $this->options['expire']);
 
             if ($save === false) {
                 throw new RuntimeException("Failed to store response to cache");
