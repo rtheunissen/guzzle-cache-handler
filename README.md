@@ -15,7 +15,7 @@ composer require rtheunissen/guzzle-cache-handler
 
 ## Usage
 
-This is a handler which caches responses for a given amount of time. 
+This is a handler which caches responses for a given amount of time.
 
 You will need an implemented [CacheInterface](https://github.com/rtheunissen/cache/blob/master/src/CacheInterface.php). See [rtheunissen/cache](https://github.com/rtheunissen/cache) for more
 details.
@@ -24,13 +24,16 @@ details.
 ```php
 use Concat\Http\Handler\CacheHandler;
 use Doctrine\Common\Cache\FilesystemCache;
-
+use GuzzleHttp\Client;
 
 // Basic directory cache example
 $cacheProvider = new FilesystemCache(__DIR__ . '/cache');
 
+// Guzzle will determine an appropriate default handler if `null` is given.
+$defaultHandler = null;
+
 // Create a cache handler with a given cache provider and default handler.
-$handler = new CacheHandler($cacheProvider, $handler, [
+$handler = new CacheHandler($cacheProvider, $defaultHandler, [
 
     /**
      * @var array HTTP methods that should be cached.
