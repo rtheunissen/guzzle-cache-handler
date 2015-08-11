@@ -2,8 +2,8 @@
 
 namespace Concat\Http\Handler;
 
-use Concat\Cache\CacheInterface;
 use Concat\Cache\Adapter\AdapterFactory;
+use Concat\Cache\CacheInterface;
 use Doctrine\Common\Cache\FilesystemCache;
 use GuzzleHttp\MessageFormatter;
 use GuzzleHttp\Promise\FulfilledPromise;
@@ -209,7 +209,16 @@ class CacheHandler
 
         // Promise to store the response once the default promise is fulfilled.
         return $promise->then(function ($response) use ($request, $key) {
-            $this->store($request, $response, $key);
+            if ($this->shouldCacheResponse($response)) {
+
+                // Evaluate the content stream so that it can be cached.
+                $stream = new CachedStream((string) $response->getBody());
+                $response = $response->withBody($stream);
+
+                $this->store($request, $response, $key);
+            }
+
+            return $response;
         });
     }
 
@@ -255,7 +264,7 @@ class CacheHandler
     }
 
     /**
-     * Builds and stores a cache bundle if the response should be stored.
+     * Builds and stores a cache bundle.
      *
      * @param Request $request
      * @param Response $response
@@ -265,20 +274,32 @@ class CacheHandler
      */
     protected function store(Request $request, Response $response, $key)
     {
-        // Check if response code should be stored.
-        if ($this->shouldCacheResponse($response)) {
-            $bundle = $this->buildCacheBundle($response);
+        $bundle = $this->buildCacheBundle($response);
 
-            // Store the bundle in the cache
-            $save = $this->cache->store($key, $bundle, $this->options['expire']);
+        // Store the bundle in the cache
+        $save = $this->cache->store($key, $bundle, $this->options['expire']);
 
-            if ($save === false) {
-                throw new RuntimeException("Failed to store response to cache");
-            }
-
-            // Log that it has been stored
-            $this->logStoredBundle($request, $bundle);
+        if ($save === false) {
+            throw new RuntimeException("Failed to store response to cache");
         }
+
+        // Log that it has been stored
+        $this->logStoredBundle($request, $bundle);
+    }
+
+    /**
+     * Builds a cache bundle using a given response.
+     *
+     * @param Response $response
+     *
+     * @return array The response bundle to cache.
+     */
+    protected function buildCacheBundle(Response $response)
+    {
+        return [
+            'response' => $response,
+            'expires'  => time() + $this->options['expire'],
+        ];
     }
 
     /**
@@ -346,21 +367,6 @@ class CacheHandler
             $request->getUri(),
             md5(json_encode($options)),
         ]);
-    }
-
-    /**
-     * Builds a cache bundle using a given response.
-     *
-     * @param Response $response
-     *
-     * @return array The response bundle to cache.
-     */
-    protected function buildCacheBundle(Response $response)
-    {
-        return [
-            'response' => $response,
-            'expires'  => time() + $this->options['expire'],
-        ];
     }
 
     /**

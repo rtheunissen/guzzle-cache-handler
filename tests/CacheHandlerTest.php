@@ -10,6 +10,7 @@ use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use Mockery as m;
+use Psr\Http\Message\StreamInterface;
 use Psr\Log\LoggerInterface;
 
 class CacheHandlerTest extends \PHPUnit_Framework_TestCase
@@ -75,13 +76,23 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals($expected, $function->invoke($handler, $request));
     }
 
-    public function testRequestShouldStore()
+    private function mockResponse()
     {
+        $stream = m::mock(StreamInterface::class);
+        $stream->shouldReceive('__toString()')->andReturn('');
+
         $response = m::mock(Response::class);
         $response->shouldReceive('getStatusCode')->andReturn(200);
+        $response->shouldReceive('getBody')->andReturn($stream);
+        $response->shouldReceive('withBody')->andReturn($response);
 
+        return $response;
+    }
+
+    public function testRequestShouldStore()
+    {
+        $response = $this->mockResponse();
         $cache = new ArrayCache();
-
         $mockHandler = new MockHandler([
             $response,
         ]);
@@ -101,8 +112,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
 
     public function testCacheShouldDeleteIfExpired()
     {
-        $response = m::mock(Response::class);
-        $response->shouldReceive('getStatusCode')->andReturn(200);
+        $response = $this->mockResponse();
 
         $cache = m::mock(ArrayCache::class . "[fetch,delete]");
         $cache->shouldReceive('fetch')->times(1)->andReturn([
@@ -136,8 +146,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
      */
     public function testCacheFetchException()
     {
-        $response = m::mock(Response::class);
-        $response->shouldReceive('getStatusCode')->andReturn(200);
+        $response = $this->mockResponse();
 
         $cache = m::mock(ArrayCache::class . "[fetch]");
         $cache->shouldReceive('fetch')->andReturn(false);
@@ -160,8 +169,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
      */
     public function testCacheStoreException()
     {
-        $response = m::mock(Response::class);
-        $response->shouldReceive('getStatusCode')->andReturn(200);
+        $response = $this->mockResponse();
 
         $cache = m::mock(ArrayCache::class . "[save]");
         $cache->shouldReceive('save')->andReturn(false);
@@ -180,8 +188,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
 
     public function testZeroExpireShouldNotStore()
     {
-        $response = m::mock(Response::class);
-        $response->shouldReceive('getStatusCode')->andReturn(200);
+        $response = $this->mockResponse();
 
         $cache = new ArrayCache();
 
@@ -203,11 +210,9 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         $client->get('/');
     }
 
-    public function testShouldNotCacherRequest()
+    public function testShouldNotCacheRequest()
     {
-        $response = m::mock(Response::class);
-        $response->shouldReceive('getStatusCode')->andReturn(200);
-
+        $response = $this->mockResponse();
         $cache = new ArrayCache();
 
         $mockHandler = new MockHandler([
@@ -264,8 +269,7 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
      */
     public function testLogger($level, $template = null)
     {
-        $response = m::mock(Response::class);
-        $response->shouldReceive('getStatusCode')->andReturn(200);
+        $response = $this->mockResponse();
 
         $cache = new ArrayCache();
 
