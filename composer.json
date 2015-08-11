@@ -13,10 +13,10 @@
         "php": ">=5.5",
         "guzzlehttp/guzzle": "~6.0",
         "rtheunissen/cache": "~0.1",
-        "doctrine/cache": "~1.4",
         "psr/log": "~1.0"
     },
     "require-dev": {
+        "doctrine/cache": "~1.4",
         "phpunit/phpunit": "~4.7",
         "mockery/mockery": "~0.9"
     },
