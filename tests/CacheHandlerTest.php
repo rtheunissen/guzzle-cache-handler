@@ -103,11 +103,11 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
 
         $client = new Client(['handler' => $handler]);
 
-        $key = 'GET:/:2e0ec6d556792df9bf25a1b3fd097058';
+        $client->get('/');
+        $this->assertFalse($handler->lastRequestWasFetchedFromCache());
 
         $client->get('/');
-        $this->assertTrue($cache->contains($key));
-        $client->get('/');
+        $this->assertTrue($handler->lastRequestWasFetchedFromCache());
     }
 
     public function testCacheShouldDeleteIfExpired()
@@ -132,13 +132,15 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
 
         $client = new Client(['handler' => $handler]);
 
-        $key = 'GET:/:2e0ec6d556792df9bf25a1b3fd097058';
+        $this->assertFalse($handler->lastRequestWasFetchedFromCache());
 
-        $this->assertFalse($cache->contains($key));
+        // First request should cache the response
         $client->get('/');
-        $this->assertTrue($cache->contains($key));
+        $this->assertFalse($handler->lastRequestWasFetchedFromCache());
+
+        // This request should not fetch from cache because it's expired
         $client->get('/');
-        $this->assertTrue($cache->contains($key));
+        $this->assertFalse($handler->lastRequestWasFetchedFromCache());
     }
 
     /**
@@ -203,11 +205,10 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
 
         $client = new Client(['handler' => $handler]);
 
-        $key = 'GET:/:2e0ec6d556792df9bf25a1b3fd097058';
+        $client->get('/');
+        $client->get('/');
 
-        $client->get('/');
-        $this->assertFalse($cache->contains($key));
-        $client->get('/');
+        $this->assertFalse($handler->lastRequestWasFetchedFromCache());
     }
 
     public function testShouldNotCacheRequest()
@@ -226,10 +227,8 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
 
         $client = new Client(['handler' => $handler]);
 
-        $key = 'GET:/:2e0ec6d556792df9bf25a1b3fd097058';
-
         $client->get('/');
-        $this->assertFalse($cache->contains($key));
+        $this->assertFalse($handler->lastRequestWasFetchedFromCache());
     }
 
     public function testShouldNotCacheResponse()
@@ -249,10 +248,8 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
 
         $client = new Client(['handler' => $handler]);
 
-        $key = 'GET:/:2e0ec6d556792df9bf25a1b3fd097058';
-
         $client->get('/');
-        $this->assertFalse($cache->contains($key));
+        $this->assertFalse($handler->lastRequestWasFetchedFromCache());
     }
 
     public function providerTestLogger()

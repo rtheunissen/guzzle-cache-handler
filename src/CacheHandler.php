@@ -51,6 +51,11 @@ class CacheHandler
     protected $options;
 
     /**
+     *  @var bool Whether the most recent request was fetched from the cache.
+     */
+    private $fetchedFromCache = false;
+
+    /**
      * Constructs a new cache handler.
      *
      * @param object $cache Cache provider.
@@ -195,9 +200,26 @@ class CacheHandler
 
             // Return the cached response if fetch was successful.
             if ($response) {
+                $this->fetchedFromCache = true;
                 return new FulfilledPromise($response);
             }
         }
+
+        return $this->request($request, $options, $key);
+    }
+
+    /**
+     * Makes the request and stores it in the cache if required to.
+     *
+     * @param Request $request
+     * @param array   $options
+     * @param string  $key
+     *
+     * @return PromiseInterface
+     */
+    protected function request(Request $request, array $options, $key)
+    {
+        $this->fetchedFromCache = false;
 
         // Make the request using the default handler.
         $promise = $this->invokeDefault($request, $options);
@@ -220,6 +242,17 @@ class CacheHandler
 
             return $response;
         });
+    }
+
+    /**
+     * Returns true if the most recent request was fetched from the cache, or
+     * false if the request was made (regardless of whether it was then cached).
+     *
+     * @return bool
+     */
+    public function lastRequestWasFetchedFromCache()
+    {
+        return $this->fetchedFromCache;
     }
 
     /**
@@ -308,12 +341,12 @@ class CacheHandler
      *
      * @param Request $request The request to filter.
      *
-     * @return boolean true if should be cached, false otherwise.
+     * @return bool true if should be cached, false otherwise.
      */
     protected function filter(Request $request)
     {
         $filter = $this->options['filter'];
-        return ! is_callable($filter) || $filter($request);
+        return ! is_callable($filter) || call_user_func($filter, $request);
     }
 
     /**
@@ -321,7 +354,7 @@ class CacheHandler
      *
      * @param Request $request The request to check.
      *
-     * @return boolean true if should be cached, false otherwise.
+     * @return bool true if should be cached, false otherwise.
      */
     protected function checkMethod(Request $request)
     {
@@ -334,7 +367,7 @@ class CacheHandler
      *
      * @param Request $request The request to check.
      *
-     * @return boolean true if the request should be cached, false otherwise.
+     * @return bool true if the request should be cached, false otherwise.
      */
     private function shouldCacheRequest(Request $request)
     {
