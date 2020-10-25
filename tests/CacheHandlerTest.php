@@ -10,12 +10,13 @@ use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use Mockery as m;
+use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\StreamInterface;
 use Psr\Log\LoggerInterface;
 
-class CacheHandlerTest extends \PHPUnit_Framework_TestCase
+class CacheHandlerTest extends TestCase
 {
-    public function tearDown()
+    public function tearDown(): void
     {
         m::close();
     }
@@ -315,5 +316,9 @@ class CacheHandlerTest extends \PHPUnit_Framework_TestCase
         $client->get('/');
         $client->get('/');
         $client->get('/');
+
+        $this->addToAssertionCount(
+            m::getContainer()->mockery_getExpectationCount()
+        );
     }
 }

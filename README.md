@@ -54,7 +54,7 @@ $handler = new CacheHandler($cacheProvider, $defaultHandler, [
 // Use a PSR-3 compliant logger to log when bundles are stored or fetched.
 $handler->setLogger($logger);
 
-// Create a Guzzle 6 client, passing the cache handler as 'handler'.
+// Create a Guzzle 6/7 client, passing the cache handler as 'handler'.
 $client = new Client([
     'handler' => $handler
 ]);
