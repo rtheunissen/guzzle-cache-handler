@@ -287,13 +287,14 @@ class CacheHandler
         if ($bundle === false) {
             throw new RuntimeException("Failed to fetch response from cache");
         }
+        if ($bundle === null || time() >= $bundle['expires']) {
+            // Delete expired entries so that they don't trigger 'contains'.
+            $this->cache->delete($key);
 
-        if (time() < $bundle['expires']) {
-            return $bundle;
+            return;
         }
 
-        // Delete expired entries so that they don't trigger 'contains'.
-        $this->cache->delete($key);
+        return $bundle;
     }
 
     /**
