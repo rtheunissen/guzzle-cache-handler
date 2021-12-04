@@ -13,6 +13,7 @@ use Mockery as m;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\StreamInterface;
 use Psr\Log\LoggerInterface;
+use RuntimeException;
 
 class CacheHandlerTest extends TestCase
 {
@@ -144,11 +145,10 @@ class CacheHandlerTest extends TestCase
         $this->assertFalse($handler->lastRequestWasFetchedFromCache());
     }
 
-    /**
-     * @expectedException RuntimeException
-     */
     public function testCacheFetchException()
     {
+        $this->expectException(RuntimeException::class);
+
         $response = $this->mockResponse();
 
         $cache = m::mock(ArrayCache::class . "[fetch]");
@@ -167,11 +167,10 @@ class CacheHandlerTest extends TestCase
         $client->get('/');
     }
 
-    /**
-     * @expectedException RuntimeException
-     */
     public function testCacheStoreException()
     {
+        $this->expectException(RuntimeException::class);
+
         $response = $this->mockResponse();
 
         $cache = m::mock(ArrayCache::class . "[save]");
