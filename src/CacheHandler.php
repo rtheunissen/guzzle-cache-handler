@@ -157,14 +157,14 @@ class CacheHandler
     {
         return [
 
-            // HTTP methods that should be cached
+            // HTTP methods that should be cached.
             'methods' => ['GET', 'HEAD', 'OPTIONS'],
 
-            // Time in seconds to cache the response for
-            'expire'  => 30,
+            // Time in seconds to cache the response for.
+            'expire' => 30,
 
-            // Accepts a request and returns true if it should be cached
-            'filter'  => null,
+            // Accepts a request and response, determines if it should be cached.
+            'filter' => null,
         ];
     }
 
@@ -178,7 +178,6 @@ class CacheHandler
         if ($this->shouldCacheRequest($request)) {
             return $this->cache($request, $options);
         }
-
         return $this->invokeDefault($request, $options);
     }
 
@@ -204,7 +203,6 @@ class CacheHandler
                 return new FulfilledPromise($response);
             }
         }
-
         return $this->request($request, $options, $key);
     }
 
@@ -231,7 +229,7 @@ class CacheHandler
 
         // Promise to store the response once the default promise is fulfilled.
         return $promise->then(function ($response) use ($request, $key) {
-            if ($this->shouldCacheResponse($response)) {
+            if ($this->shouldCacheResponse($request, $response)) {
 
                 // Evaluate the content stream so that it can be cached.
                 $stream = new CachedStream((string) $response->getBody());
@@ -340,14 +338,22 @@ class CacheHandler
      * Filters the request using a configured filter to determine if it should
      * be cached.
      *
-     * @param Request $request The request to filter.
+     * @param Request  $request  The request to filter.
+     * @param Response $response The response to filter, if any.
      *
      * @return bool true if should be cached, false otherwise.
      */
-    protected function filter(Request $request)
+    protected function filter(Request $request, Response $response = null)
     {
         $filter = $this->options['filter'];
-        return ! is_callable($filter) || call_user_func($filter, $request);
+        if ($filter) {
+            return call_user_func($filter, $request, $response);
+        }
+        if ($response) {
+            return $response->getStatusCode() < 400;
+        }
+        // No response yet, checking request.
+        return $this->checkMethod($request);
     }
 
     /**
@@ -372,17 +378,18 @@ class CacheHandler
      */
     private function shouldCacheRequest(Request $request)
     {
-        return $this->checkMethod($request) && $this->filter($request);
+        return $this->filter($request, null);
     }
 
     /**
      * Determines if a response should be cached.
      *
+     * @Request Response $response
      * @param Response $response
      */
-    protected function shouldCacheResponse(Response $response)
+    protected function shouldCacheResponse(Request $request, Response $response)
     {
-        return $response && $response->getStatusCode() < 400;
+        return $this->filter($request, $response);
     }
 
     /**
@@ -451,7 +458,7 @@ class CacheHandler
             return $this->getDefaultLogLevel();
         }
 
-        if (is_callable($this->logLevel)) {
+        if ($this->logLevel instanceof \Closure) {
             return call_user_func($this->logLevel, $response);
         }
 

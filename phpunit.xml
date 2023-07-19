@@ -1,17 +1,19 @@
-<phpunit bootstrap="vendor/autoload.php" colors="true">
-    <testsuites>
-        <testsuite name="all">
-            <directory>tests</directory>
-        </testsuite>
-    </testsuites>
-    <filter>
-        <whitelist>
-            <file>src/CacheHandler.php</file>
-        </whitelist>
-    </filter>
-    <logging>
-        <log type="coverage-html" target="build/coverage/html"/>
-        <log type="coverage-text" target="build/coverage/coverage.txt"/>
-        <log type="coverage-clover" target="build/coverage/coverage.xml"/>
-    </logging>
+<?xml version="1.0"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" bootstrap="vendor/autoload.php" colors="true" xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.3/phpunit.xsd">
+  <coverage>
+    <include>
+      <file>src/CacheHandler.php</file>
+    </include>
+    <report>
+      <clover outputFile="build/coverage/coverage.xml"/>
+      <html outputDirectory="build/coverage/html"/>
+      <text outputFile="build/coverage/coverage.txt"/>
+    </report>
+  </coverage>
+  <testsuites>
+    <testsuite name="all">
+      <directory>tests</directory>
+    </testsuite>
+  </testsuites>
+  <logging/>
 </phpunit>

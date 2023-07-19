@@ -31,7 +31,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function rewind()
+    public function rewind(): void
     {
         throw new BadMethodCallException();
     }
@@ -39,7 +39,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function close()
+    public function close(): void
     {
         throw new BadMethodCallException();
     }
@@ -47,7 +47,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function detach()
+    public function detach(): void
     {
         throw new BadMethodCallException();
     }
@@ -63,7 +63,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function getSize()
+    public function getSize(): ?int
     {
         return strlen($this->content);
     }
@@ -71,7 +71,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function tell()
+    public function tell(): int
     {
         throw new BadMethodCallException();
     }
@@ -79,7 +79,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function eof()
+    public function eof(): bool
     {
         throw new BadMethodCallException();
     }
@@ -87,7 +87,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function isSeekable()
+    public function isSeekable(): bool
     {
         return false;
     }
@@ -95,7 +95,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function seek($offset, $whence = SEEK_SET)
+    public function seek($offset, $whence = SEEK_SET): void
     {
         throw new BadMethodCallException();
     }
@@ -103,7 +103,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function isWritable()
+    public function isWritable(): bool
     {
         return false;
     }
@@ -111,7 +111,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function write($string)
+    public function write($string): int
     {
         throw new BadMethodCallException();
     }
@@ -119,7 +119,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function isReadable()
+    public function isReadable(): bool
     {
         return true;
     }
@@ -127,7 +127,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function read($length)
+    public function read($length): string
     {
         return substr($this->content, 0, $length);
     }
@@ -135,7 +135,7 @@ class CachedStream implements StreamInterface
     /**
      * @inheritDoc
      */
-    public function getContents()
+    public function getContents(): string
     {
         return $this->content;
     }

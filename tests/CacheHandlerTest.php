@@ -33,8 +33,6 @@ class CacheHandlerTest extends TestCase
     public function providerTestFilter()
     {
         return [
-            [true, true],
-            [true, false],
             [true, null],
             [true, function ($request) { return true; }],
             [false, function ($request) { return false; }],
@@ -50,7 +48,8 @@ class CacheHandlerTest extends TestCase
         $handler = new CacheHandler($cache);
         $handler->setOptions(['filter' => $filter]);
         $request = m::mock(Request::class);
-        $this->assertEquals($expected, $function->invoke($handler, $request, $filter));
+        $request->shouldReceive('getMethod')->andReturn("GET");
+        $this->assertEquals($expected, $function->invoke($handler, $request));
     }
 
     public function providerTestCheckMethod()
