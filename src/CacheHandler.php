@@ -339,11 +339,11 @@ class CacheHandler
      * be cached.
      *
      * @param Request  $request  The request to filter.
-     * @param Response $response The response to filter, if any.
+     * @param Response|null $response The response to filter, if any.
      *
      * @return bool true if should be cached, false otherwise.
      */
-    protected function filter(Request $request, Response $response = null)
+    protected function filter(Request $request, ?Response $response = null)
     {
         $filter = $this->options['filter'];
         if ($filter) {
